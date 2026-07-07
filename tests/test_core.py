@@ -68,6 +68,18 @@ def test_inconsistent_token_total_rejected() -> None:
         validate_record(raw)
 
 
+def test_invalid_timestamp_and_nonfinite_decimal_rejected() -> None:
+    raw = provider_record()
+    raw["start_time"] = "not-a-time"
+    with pytest.raises(OpenAIMeterError, match="invalid timestamp"):
+        validate_record(raw)
+
+    raw = provider_record()
+    raw["cost"]["total_cost"] = "NaN"
+    with pytest.raises(OpenAIMeterError, match="finite Decimal"):
+        validate_record(raw)
+
+
 def test_pricing_calculation_exact() -> None:
     record = validate_record(provider_record())
     table = PricingTable.from_file(ROOT / "examples/provider_api/pricing.yaml")
@@ -83,6 +95,16 @@ def test_missing_price_is_unknown_not_zero() -> None:
     result = calculate_provider_cost(record, table)
     assert result["status"] == "unknown"
     assert result["provider_cost"] is None
+
+
+def test_missing_active_pricing_rate_is_unknown_not_zero() -> None:
+    record = validate_record(provider_record())
+    entry = dict(PricingTable.from_file(ROOT / "examples/provider_api/pricing.yaml").entries[0])
+    del entry["output_token_price"]
+    result = calculate_provider_cost(record, PricingTable(version="x", entries=[entry]))
+    assert result["status"] == "unknown"
+    assert result["resolution"] == "missing_rate"
+    assert result["missing_rates"] == ["output_token_price"]
 
 
 def test_ambiguous_pricing() -> None:
@@ -187,6 +209,7 @@ def test_jsonl_duplicate_rejected(tmp_path: Path) -> None:
 
 def test_csv_formula_escaping_and_savings() -> None:
     assert safe_csv_cell("=1+1") == "'=1+1"
+    assert safe_csv_cell("  =1+1") == "'  =1+1"
     assert (
         replacement_savings(Decimal("2"), Decimal("1"), realized=False)["category"]
         == "benchmark_projected"
@@ -197,3 +220,15 @@ def test_csv_formula_escaping_and_savings() -> None:
 def test_cache_hit_rate() -> None:
     records = load_records(ROOT / "examples/caching/usage.json")
     assert cache_hit_rate(records) == Decimal("1")
+
+
+def test_json_shape_validation(tmp_path: Path) -> None:
+    scalar = tmp_path / "scalar.json"
+    scalar.write_text('"not-a-record"', encoding="utf-8")
+    with pytest.raises(OpenAIMeterError, match="expected JSON object or array"):
+        load_records(scalar)
+
+    jsonl = tmp_path / "bad.jsonl"
+    jsonl.write_text("[]\n", encoding="utf-8")
+    with pytest.raises(OpenAIMeterError, match="JSONL record must be a JSON object"):
+        load_records(jsonl)

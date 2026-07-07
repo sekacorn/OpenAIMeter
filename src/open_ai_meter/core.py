@@ -106,7 +106,10 @@ def parse_time(value: str) -> datetime:
 
     if value.endswith("Z"):
         value = value[:-1] + "+00:00"
-    parsed = datetime.fromisoformat(value)
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise OpenAIMeterError(f"invalid timestamp: {value}") from exc
     if parsed.tzinfo is None:
         raise OpenAIMeterError("timestamps must be timezone-aware")
     return parsed.astimezone(UTC)
@@ -122,9 +125,12 @@ def decimal_from(value: Any, field: str) -> Decimal:
     """Parse a Decimal from JSON/YAML-safe values."""
 
     try:
-        return Decimal(str(value))
+        parsed = Decimal(str(value))
     except (InvalidOperation, ValueError) as exc:
         raise OpenAIMeterError(f"{field} must be a valid Decimal") from exc
+    if not parsed.is_finite():
+        raise OpenAIMeterError(f"{field} must be a finite Decimal")
+    return parsed
 
 
 def money(value: Decimal) -> str:
@@ -145,18 +151,26 @@ def require_currency(value: Any) -> str:
 def metadata_depth(value: Any, depth: int = 0) -> int:
     """Return nested metadata depth."""
 
-    if isinstance(value, dict):
-        return max([depth, *(metadata_depth(v, depth + 1) for v in value.values())])
-    if isinstance(value, list):
-        return max([depth, *(metadata_depth(v, depth + 1) for v in value)])
-    return depth
+    max_depth = depth
+    stack: list[tuple[Any, int]] = [(value, depth)]
+    while stack:
+        current, current_depth = stack.pop()
+        max_depth = max(max_depth, current_depth)
+        if max_depth > MAX_METADATA_DEPTH:
+            return max_depth
+        if isinstance(current, dict):
+            stack.extend((item, current_depth + 1) for item in current.values())
+        elif isinstance(current, list):
+            stack.extend((item, current_depth + 1) for item in current)
+    return max_depth
 
 
 def safe_csv_cell(value: Any) -> str:
     """Escape CSV cells that spreadsheet programs may treat as formulas."""
 
     text = "" if value is None else str(value)
-    if text.startswith(CSV_FORMULA_PREFIXES):
+    # Spreadsheet apps may ignore leading whitespace before formula triggers.
+    if text.lstrip().startswith(CSV_FORMULA_PREFIXES):
         return "'" + text
     return text
 
@@ -415,6 +429,28 @@ def calculate_provider_cost(record: UsageRecord, pricing: PricingTable) -> dict[
         }
     usage = record.data.get("usage", {})
     per_million = Decimal("1000000")
+    token_rates = {
+        "input": ("input_tokens", "input_token_price"),
+        "output": ("output_tokens", "output_token_price"),
+        "cached_input": ("cached_input_tokens", "cached_input_price"),
+        "cached_output": ("cached_output_tokens", "cached_output_price"),
+        "reasoning": ("reasoning_tokens", "reasoning_token_price"),
+    }
+    missing_rates = [
+        rate_field
+        for usage_field, rate_field in token_rates.values()
+        if decimal_from(usage.get(usage_field, 0), usage_field) > 0
+        and entry.get(rate_field) is None
+    ]
+    if missing_rates:
+        return {
+            "status": "unknown",
+            "provider_cost": None,
+            "resolution": "missing_rate",
+            "pricing_version": pricing.version,
+            "missing_rates": missing_rates,
+            "components": {},
+        }
     components = {
         "input": decimal_from(usage.get("input_tokens", 0), "input_tokens")
         * decimal_from(entry.get("input_token_price", "0"), "input_token_price")
@@ -859,15 +895,27 @@ def load_yaml(path: Path) -> dict[str, Any]:
     return loaded
 
 
+def require_mapping(value: Any, context: str) -> dict[str, Any]:
+    """Reject scalar/list inputs before record validation touches mapping fields."""
+
+    if not isinstance(value, dict):
+        raise OpenAIMeterError(f"{context} must be a JSON object")
+    return value
+
+
 def load_records(path: Path) -> list[UsageRecord]:
     """Load one record from JSON or many records from JSONL."""
 
     text = path.read_text(encoding="utf-8")
     if path.suffix == ".jsonl":
-        return [validate_record(json.loads(line)) for line in text.splitlines() if line]
+        return [
+            validate_record(require_mapping(json.loads(line), "JSONL record"))
+            for line in text.splitlines()
+            if line
+        ]
     loaded = json.loads(text)
     if isinstance(loaded, list):
-        return [validate_record(item) for item in loaded]
+        return [validate_record(require_mapping(item, "JSON record")) for item in loaded]
     if isinstance(loaded, dict):
         return [validate_record(loaded)]
     raise OpenAIMeterError("expected JSON object or array")
@@ -1208,10 +1256,18 @@ def load_audit_log(path: Path) -> list[UsageRecord]:
 
     text = path.read_text(encoding="utf-8")
     if path.suffix == ".jsonl":
-        events = [json.loads(line) for line in text.splitlines() if line]
+        events = [
+            require_mapping(json.loads(line), "audit-log event")
+            for line in text.splitlines()
+            if line
+        ]
     else:
         loaded = json.loads(text)
-        events = loaded if isinstance(loaded, list) else [loaded]
+        events = (
+            [require_mapping(item, "audit-log event") for item in loaded]
+            if isinstance(loaded, list)
+            else [require_mapping(loaded, "audit-log event")]
+        )
     return [audit_log_to_record(event) for event in events]
 
 
