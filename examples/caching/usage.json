@@ -1,0 +1,15 @@
+[
+  {
+    "schema_version": "1.0",
+    "record_id": "cache-hit-001",
+    "record_type": "model.cache_hit",
+    "start_time": "2026-07-06T14:00:00Z",
+    "end_time": "2026-07-06T14:00:00.050000Z",
+    "model": { "provider": "example-provider", "requested_model": "fictional-fast-1", "response_model": "fictional-fast-1", "hosting": "provider_api" },
+    "usage": { "input_tokens": 0, "output_tokens": 0, "cached_input_tokens": 1300, "cached_output_tokens": 220, "reasoning_tokens": 0, "audio_input_tokens": 0, "audio_output_tokens": 0, "image_input_units": 0, "total_tokens": 1520, "provider_total_semantics": "includes cached tokens" },
+    "performance": { "latency_ms": 50, "status": "success" },
+    "cost": { "currency": "USD", "total_cost": "0.000240" },
+    "outcome": { "outcome_id": "cached-answer", "success": true, "quantity": "1" },
+    "metadata": { "avoided_cost_category": "estimated" }
+  }
+]

@@ -1,0 +1,12 @@
+profile:
+  id: local-rtx-workstation
+  currency: USD
+  compute:
+    gpu_hourly_cost: "0.18"
+    cpu_hourly_cost: "0.04"
+    memory_hourly_cost: "0.01"
+  energy:
+    average_watts: "280"
+    electricity_per_kwh: "0.16"
+  allocation:
+    overhead_percentage: "10"

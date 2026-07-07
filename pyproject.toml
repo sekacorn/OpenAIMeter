@@ -1,0 +1,104 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "openaimeter"
+version = "0.1.0a3"
+description = "A vendor-neutral FinOps and measurement toolkit for AI usage, cost, efficiency, and business outcomes."
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+license = { text = "MIT" }
+authors = [
+    { name = "sekacorn" }
+]
+keywords = ["ai", "finops", "llmops", "metering", "observability", "cost"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Financial",
+    "Topic :: System :: Monitoring",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+dependencies = [
+    "PyYAML>=6.0.1",
+]
+
+[project.optional-dependencies]
+otel = ["opentelemetry-api>=1.25"]
+dev = [
+    "bandit[toml]>=1.7.10",
+    "build>=1.2",
+    "coverage[toml]>=7.6",
+    "mypy>=1.10",
+    "pip-audit>=2.7",
+    "pytest>=8.2",
+    "pytest-cov>=5.0",
+    "ruff>=0.5",
+    "twine>=5.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/sekacorn/OpenAIMeter"
+Repository = "https://github.com/sekacorn/OpenAIMeter"
+Issues = "https://github.com/sekacorn/OpenAIMeter/issues"
+Documentation = "https://github.com/sekacorn/OpenAIMeter/tree/main/docs"
+
+[project.scripts]
+openaimeter = "open_ai_meter.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/open_ai_meter"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/schemas",
+    "/examples",
+    "/docs",
+    "/README.md",
+    "/LICENSE",
+    "/SECURITY.md",
+    "/THREAT_MODEL.md",
+    "/CONTRIBUTING.md",
+    "/CODE_OF_CONDUCT.md",
+    "/CHANGELOG.md",
+    "/MANIFEST.in",
+    "/pyproject.toml",
+]
+exclude = [
+    "/build",
+    "/dist",
+    "/*.db",
+    "/.env",
+    "/.venv",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "C4", "SIM", "ARG"]
+ignore = ["S101"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src/open_ai_meter", "tests"]
+
+[tool.pytest.ini_options]
+addopts = "--cov=open_ai_meter --cov-branch --cov-report=term-missing --cov-fail-under=80"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["open_ai_meter"]
+
+[tool.bandit]
+skips = ["B101"]

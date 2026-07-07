@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sekacorn/OpenAIMeter/schemas/v1/usage-record.schema.json",
+  "title": "OpenAIMeter Usage Record v1",
+  "type": "object",
+  "required": ["schema_version", "record_id", "record_type", "start_time", "end_time", "model", "usage", "performance", "cost"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "record_id": { "type": "string" },
+    "record_type": { "type": "string" },
+    "start_time": { "type": "string", "format": "date-time" },
+    "end_time": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": true
+}

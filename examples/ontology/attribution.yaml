@@ -1,0 +1,11 @@
+id: claims-ontology-lite
+mappings:
+  workflows:
+    claim-review:
+      business_capability: claims_adjudication
+      data_classification: confidential
+      outcome_type: completed_claim
+  projects:
+    claims-automation:
+      portfolio: operations_ai
+      value_stream: claims

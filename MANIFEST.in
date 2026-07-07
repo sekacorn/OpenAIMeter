@@ -1,0 +1,8 @@
+include README.md LICENSE SECURITY.md THREAT_MODEL.md CONTRIBUTING.md CODE_OF_CONDUCT.md CHANGELOG.md
+recursive-include src/open_ai_meter/schemas *.json
+recursive-include schemas *.json
+recursive-include examples *.json *.yaml
+recursive-include docs *.md
+exclude .env
+recursive-exclude build *
+recursive-exclude dist *

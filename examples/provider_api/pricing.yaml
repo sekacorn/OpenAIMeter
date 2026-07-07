@@ -1,0 +1,22 @@
+version: fictional-2026-07-01
+currency: USD
+notes: "Fictional test pricing only. Not provider-verified live pricing."
+entries:
+  - provider: example-provider
+    model_key: fictional-fast-1
+    effective_start: "2026-07-01T00:00:00Z"
+    effective_end:
+    currency: USD
+    input_token_price: "1.000000"
+    output_token_price: "7.909091"
+    cached_input_price: "0.100000"
+    cached_output_price: "0.500000"
+    reasoning_token_price: "0.000000"
+    per_request_price: "0.000000"
+    batch_discount: "0"
+    region:
+    source_reference: "OpenAIMeter fictional fixture"
+    source_type: "test_fixture"
+    verified_date: "2026-07-06"
+    expires_at: "2026-08-01T00:00:00Z"
+    notes: "Rates are currency units per 1,000,000 tokens."

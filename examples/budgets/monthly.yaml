@@ -1,0 +1,8 @@
+id: claims-monthly
+currency: USD
+amount: "10.00"
+warning_threshold: "80"
+critical_threshold: "100"
+period: monthly
+scope:
+  project_id: claims-automation

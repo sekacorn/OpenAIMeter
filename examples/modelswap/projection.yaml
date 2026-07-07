@@ -1,0 +1,10 @@
+currency: USD
+volume: "1000"
+baseline:
+  model: fictional-large-1
+  success_rate: "0.92"
+  cost_per_success: "0.010000"
+candidate:
+  model: qwen2.5:3b
+  success_rate: "0.89"
+  cost_per_success: "0.002500"

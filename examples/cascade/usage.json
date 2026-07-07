@@ -1,0 +1,15 @@
+[
+  {
+    "schema_version": "1.0",
+    "record_id": "cascade-small-001",
+    "record_type": "model.routing_decision",
+    "start_time": "2026-07-06T13:00:00Z",
+    "end_time": "2026-07-06T13:00:00.500000Z",
+    "model": { "provider": "ollama", "requested_model": "qwen2.5:3b", "response_model": "qwen2.5:3b", "hosting": "local_device" },
+    "usage": { "input_tokens": 500, "output_tokens": 80, "cached_input_tokens": 0, "cached_output_tokens": 0, "reasoning_tokens": 0, "audio_input_tokens": 0, "audio_output_tokens": 0, "image_input_units": 0, "total_tokens": 580 },
+    "performance": { "latency_ms": 500, "status": "success" },
+    "cost": { "currency": "USD", "total_cost": "0.000030" },
+    "outcome": { "outcome_id": "triage", "success": true, "quantity": "1" },
+    "metadata": { "comparison": "always external would be estimated, not realized" }
+  }
+]

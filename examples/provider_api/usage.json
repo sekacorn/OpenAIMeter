@@ -1,0 +1,71 @@
+{
+  "schema_version": "1.0",
+  "record_id": "provider-api-001",
+  "record_type": "model.usage",
+  "start_time": "2026-07-06T12:30:45.000000Z",
+  "end_time": "2026-07-06T12:30:46.200000Z",
+  "source": {
+    "service": "claims-agent",
+    "component": "model-router",
+    "environment": "production",
+    "version": "1.2.0"
+  },
+  "attribution": {
+    "organization_id": "example-org",
+    "team_id": "claims",
+    "project_id": "claims-automation",
+    "workflow_id": "claim-review",
+    "run_id": "run-123",
+    "agent_id": "agent-17",
+    "cost_center": "operations"
+  },
+  "model": {
+    "provider": "example-provider",
+    "requested_model": "fictional-fast-1",
+    "response_model": "fictional-fast-1",
+    "hosting": "provider_api",
+    "endpoint_classification": "external",
+    "pricing_key": "fictional-fast-1"
+  },
+  "usage": {
+    "input_tokens": 1300,
+    "output_tokens": 220,
+    "cached_input_tokens": 0,
+    "cached_output_tokens": 0,
+    "reasoning_tokens": 0,
+    "audio_input_tokens": 0,
+    "audio_output_tokens": 0,
+    "image_input_units": 0,
+    "total_tokens": 1520
+  },
+  "performance": {
+    "latency_ms": 1200,
+    "time_to_first_token_ms": 180,
+    "retries": 0,
+    "status": "success"
+  },
+  "cost": {
+    "currency": "USD",
+    "provider_cost": "0.003040",
+    "infrastructure_cost": "0.000000",
+    "allocated_cost": "0.000000",
+    "total_cost": "0.003040",
+    "calculation_method": "fictional_pricing_table",
+    "pricing_version": "fictional-2026-07-01"
+  },
+  "outcome": {
+    "outcome_id": "claim-review-success",
+    "outcome_type": "workflow_completed",
+    "success": true,
+    "score": "1.0",
+    "quantity": "1",
+    "unit": "completed_claim",
+    "confidence": "high"
+  },
+  "correlation": {
+    "request_id": "req-123",
+    "trace_id": "0123456789abcdef0123456789abcdef",
+    "span_id": "0123456789abcdef"
+  },
+  "metadata": {}
+}
