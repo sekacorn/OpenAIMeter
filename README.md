@@ -161,13 +161,19 @@ Pricing tables may become stale; calculated cost may differ from invoices; local
 
 ## Roadmap
 
-0.1.0a2: implemented richer pricing-source management, price-expiration warnings, more allocation methods, improved reconciliation, Prometheus export, and improved static HTML reports.
+### Completed Alpha Milestones
 
-0.1.0a3: implemented ecosystem adapter helpers, audit-log ingestion, orchestration instrumentation records, local-cost profiles, model-swap projections, budget hooks, and ontology-based attribution.
+0.1.0a1 established the offline core: versioned usage records, Decimal cost accounting, provider pricing calculation, local inference estimates, outcomes, cost per success, budgets, forecasts, anomalies, JSONL and SQLite storage, reports, CLI, examples, tests, documentation, and packaging.
 
-0.2: optional PostgreSQL, provider invoice imports, signed pricing manifests, organization-level allocation rules, chargeback/showback exports, dashboard starter, richer cost-export compatibility.
+0.1.0a2 added richer pricing-source management, price-expiration warnings, more allocation methods, reconciliation reports, Prometheus export, and static HTML reports.
 
-1.0: stable schema, compatibility policy, verified OpenTelemetry profile, verified cost-export profile, migration policy, security review, enterprise-scale storage adapter.
+0.1.0a3 added ecosystem adapter helpers, audit-log ingestion, orchestration instrumentation records, local-cost profile templates, ModelSwapBench-style projections, budget hooks, and ontology-based attribution.
+
+### Planned
+
+0.2 will focus on optional PostgreSQL storage, provider invoice imports, signed pricing manifests, organization-level allocation rules, chargeback and showback exports, a dashboard starter, and richer cost-export compatibility.
+
+1.0 will require a stable measurement schema, compatibility policy, verified OpenTelemetry profile, verified cost-export profile, migration policy, security review, and an enterprise-scale storage adapter.
 
 ## Contributing
 
