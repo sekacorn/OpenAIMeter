@@ -101,3 +101,11 @@ def test_cli_acceptance_flow(tmp_path: Path, capsys) -> None:  # type: ignore[no
 
 def test_cli_error_path() -> None:
     assert run(["validate", str(ROOT / "examples/invalid/negative_tokens.json")]) == 2
+
+
+def test_cli_missing_and_malformed_files_are_controlled(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+    assert run(["validate", str(tmp_path / "missing.json")]) == 2
+    malformed = tmp_path / "malformed.json"
+    malformed.write_text("{", encoding="utf-8")
+    assert run(["validate", str(malformed)]) == 2
+    assert "openaimeter: error:" in capsys.readouterr().err

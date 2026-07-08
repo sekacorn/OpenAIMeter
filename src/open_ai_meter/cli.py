@@ -9,6 +9,8 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+import yaml
+
 from open_ai_meter import __version__
 from open_ai_meter.core import (
     Budget,
@@ -255,7 +257,7 @@ def run(argv: Sequence[str] | None = None) -> int:
             )
             print_json({"status": "exported", "output": str(output)})
             return 0
-    except (OpenAIMeterError, KeyError, json.JSONDecodeError) as exc:
+    except (OpenAIMeterError, KeyError, OSError, json.JSONDecodeError, yaml.YAMLError) as exc:
         print(f"openaimeter: error: {exc}", file=sys.stderr)
         return 2
     parser.error("unhandled command")

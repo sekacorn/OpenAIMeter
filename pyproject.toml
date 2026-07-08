@@ -41,6 +41,7 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.5",
     "twine>=5.1",
+    "types-PyYAML>=6.0.12",
 ]
 
 [project.urls]
