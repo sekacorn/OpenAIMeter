@@ -3,9 +3,9 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "openaimeter"
-version = "0.1.0a3"
-description = "A vendor-neutral FinOps and measurement toolkit for AI usage, cost, efficiency, and business outcomes."
+name = "aimeter-oss"
+version = "0.1.0a4"
+description = "Vendor-neutral AI usage, cost, efficiency, and outcome measurement."
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 license = { text = "MIT" }
@@ -45,16 +45,17 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/sekacorn/OpenAIMeter"
-Repository = "https://github.com/sekacorn/OpenAIMeter"
-Issues = "https://github.com/sekacorn/OpenAIMeter/issues"
-Documentation = "https://github.com/sekacorn/OpenAIMeter/tree/main/docs"
+Homepage = "https://github.com/sekacorn/AIMeter"
+Repository = "https://github.com/sekacorn/AIMeter"
+Issues = "https://github.com/sekacorn/AIMeter/issues"
+Documentation = "https://github.com/sekacorn/AIMeter/tree/main/docs"
 
 [project.scripts]
-openaimeter = "open_ai_meter.cli:app"
+aimeter = "ai_meter.cli:app"
+openaimeter = "ai_meter.cli:deprecated_app"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/open_ai_meter"]
+packages = ["src/ai_meter", "src/open_ai_meter"]
 
 [tool.hatch.build.targets.sdist]
 include = [
@@ -91,15 +92,15 @@ ignore = ["S101"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["src/open_ai_meter", "tests"]
+files = ["src/ai_meter", "src/open_ai_meter", "tests"]
 
 [tool.pytest.ini_options]
-addopts = "--cov=open_ai_meter --cov-branch --cov-report=term-missing --cov-fail-under=80"
+addopts = "--cov=ai_meter --cov-branch --cov-report=term-missing --cov-fail-under=80"
 testpaths = ["tests"]
 
 [tool.coverage.run]
 branch = true
-source = ["open_ai_meter"]
+source = ["ai_meter"]
 
 [tool.bandit]
 skips = ["B101"]

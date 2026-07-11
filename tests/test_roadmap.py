@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
-from open_ai_meter.core import (
+from ai_meter.core import (
     Budget,
     PricingTable,
     UsageRecord,
@@ -70,7 +70,7 @@ def test_reconciliation_prometheus_and_html() -> None:
     reconciliation = reconcile_costs([record], tolerance=Decimal("0.000001"))
     assert reconciliation[0]["status"] == "matched"
     prom = export_prometheus_metrics([record])
-    assert "openaimeter_cost_total" in prom
+    assert "aimeter_cost_total" in prom
     html = render_static_html_report([record])
     assert "<table>" in html
     assert "provider-api-001" in html

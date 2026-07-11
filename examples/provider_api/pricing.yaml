@@ -15,7 +15,7 @@ entries:
     per_request_price: "0.000000"
     batch_discount: "0"
     region:
-    source_reference: "OpenAIMeter fictional fixture"
+    source_reference: "AIMeter fictional fixture"
     source_type: "test_fixture"
     verified_date: "2026-07-06"
     expires_at: "2026-08-01T00:00:00Z"

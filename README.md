@@ -1,16 +1,20 @@
-# OpenAIMeter
+# AIMeter
 
-OpenAIMeter measures what AI costs, what it accomplishes, and how efficiently it converts compute and model usage into successful outcomes.
+AIMeter measures what AI costs, what it accomplishes, and how efficiently it converts compute and model usage into successful outcomes.
 
 Ready for public alpha release with documented limitations.
 
-OpenAIMeter is an alpha, vendor-neutral FinOps and measurement toolkit for AI models, agents, tools, retrieval systems, workflows, and infrastructure. It is local-first and offline-capable. It does not provide invoice accuracy, accounting compliance, automatic savings, production readiness, perfect price data, full OpenTelemetry conformance, or full FOCUS conformance.
+AIMeter is an alpha, vendor-neutral FinOps and measurement toolkit for AI models, agents, tools, retrieval systems, workflows, and infrastructure. It is local-first and offline-capable. It does not provide invoice accuracy, accounting compliance, automatic savings, production readiness, perfect price data, full OpenTelemetry conformance, or full FOCUS conformance.
 
 ## Why
 
-Tokens are not outcomes. A successful API call can still produce a failed business result, and a cheap model can be economically poor if it causes retries, escalations, or human correction. OpenAIMeter stores portable usage records that distinguish measured, provider-reported, user-supplied, calculated, allocated, estimated, and projected values.
+Tokens are not outcomes. A successful API call can still produce a failed business result, and a cheap model can be economically poor if it causes retries, escalations, or human correction. AIMeter stores portable usage records that distinguish measured, provider-reported, user-supplied, calculated, allocated, estimated, and projected values.
 
-OpenAIMeter is project seven in the sekacorn open-source AI infrastructure roadmap and works independently of the other projects.
+AIMeter is project seven in the sekacorn open-source AI infrastructure roadmap and works independently of the other projects.
+
+## Migration Note
+
+This project was previously published as openaimeter / OpenAIMeter. It has been renamed to aimeter-oss / AIMeter to avoid confusion with any AI provider brand and to better reflect its vendor-neutral purpose.
 
 ## Capabilities
 
@@ -24,7 +28,7 @@ OpenAIMeter is project seven in the sekacorn open-source AI infrastructure roadm
 ## Installation
 
 ```bash
-pip install openaimeter
+pip install aimeter-oss
 ```
 
 For local development:
@@ -36,10 +40,10 @@ pip install -e .[dev]
 ## Quick Start
 
 ```bash
-openaimeter validate examples/provider_api/usage.json
-openaimeter ingest examples/provider_api/usage.json --database build/meter.db
-openaimeter summarize --database build/meter.db
-openaimeter report cost-per-success --database build/meter.db
+aimeter validate examples/provider_api/usage.json
+aimeter ingest examples/provider_api/usage.json --database build/meter.db
+aimeter summarize --database build/meter.db
+aimeter report cost-per-success --database build/meter.db
 ```
 
 ## Provider API Example
@@ -47,7 +51,7 @@ openaimeter report cost-per-success --database build/meter.db
 The provider API example uses fictional, versioned pricing in `examples/provider_api/pricing.yaml`.
 
 ```bash
-openaimeter pricing calculate examples/provider_api/usage.json --pricing examples/provider_api/pricing.yaml
+aimeter pricing calculate examples/provider_api/usage.json --pricing examples/provider_api/pricing.yaml
 ```
 
 Fictional prices are test fixtures only. Missing prices are reported as unknown, never as zero.
@@ -57,14 +61,14 @@ Fictional prices are test fixtures only. Missing prices are reported as unknown,
 The local example uses `qwen2.5:3b` with supplied infrastructure assumptions:
 
 ```bash
-openaimeter infrastructure calculate examples/local_ollama/usage.json --profile examples/local_ollama/infrastructure.yaml
+aimeter infrastructure calculate examples/local_ollama/usage.json --profile examples/local_ollama/infrastructure.yaml
 ```
 
 Local inference values are estimates based on supplied assumptions, not invoices.
 
 ## Cost Per Success
 
-OpenAIMeter calculates:
+AIMeter calculates:
 
 ```text
 total included cost / successful outcome weight
@@ -75,38 +79,38 @@ Zero attempts and zero successes return explicit statuses rather than dividing b
 ## Budgets
 
 ```bash
-openaimeter budget evaluate --database build/meter.db --budget examples/budgets/monthly.yaml
+aimeter budget evaluate --database build/meter.db --budget examples/budgets/monthly.yaml
 ```
 
-OpenAIMeter evaluates budgets and thresholds; it does not enforce spending limits.
+AIMeter evaluates budgets and thresholds; it does not enforce spending limits.
 
 ## CLI
 
 Common commands:
 
 ```bash
-openaimeter report cost --database build/meter.db
-openaimeter report outcomes --database build/meter.db
-openaimeter report providers --database build/meter.db
-openaimeter report anomalies --database build/meter.db
-openaimeter report reconciliation --database build/meter.db
-openaimeter report prometheus --database build/meter.db --output build/metrics.prom
-openaimeter report html --database build/meter.db --output build/report.html
-openaimeter export --database build/meter.db --format csv --output build/usage.csv
-openaimeter pricing sources examples/provider_api/pricing.yaml
-openaimeter pricing warnings examples/provider_api/pricing.yaml
-openaimeter infrastructure profiles
-openaimeter adapters audit-log-ingest examples/audit_log/events.jsonl --database build/audit.db
-openaimeter modelswap project examples/modelswap/projection.yaml
-openaimeter schema list
-openaimeter schema export --output build/schemas
+aimeter report cost --database build/meter.db
+aimeter report outcomes --database build/meter.db
+aimeter report providers --database build/meter.db
+aimeter report anomalies --database build/meter.db
+aimeter report reconciliation --database build/meter.db
+aimeter report prometheus --database build/meter.db --output build/metrics.prom
+aimeter report html --database build/meter.db --output build/report.html
+aimeter export --database build/meter.db --format csv --output build/usage.csv
+aimeter pricing sources examples/provider_api/pricing.yaml
+aimeter pricing warnings examples/provider_api/pricing.yaml
+aimeter infrastructure profiles
+aimeter adapters audit-log-ingest examples/audit_log/events.jsonl --database build/audit.db
+aimeter modelswap project examples/modelswap/projection.yaml
+aimeter schema list
+aimeter schema export --output build/schemas
 ```
 
 ## Python API
 
 ```python
 from pathlib import Path
-from open_ai_meter import Meter, load_records
+from ai_meter import Meter, load_records
 
 meter = Meter(Path("build/meter.db"))
 try:
@@ -143,7 +147,7 @@ Records include trace and span fields compatible with W3C Trace Context and can 
 
 ## FOCUS-Inspired Export
 
-The export helper maps OpenAIMeter records to a small FOCUS-inspired cost shape. It is experimental and not a verified FOCUS conformance profile.
+The export helper maps AIMeter records to a small FOCUS-inspired cost shape. It is experimental and not a verified FOCUS conformance profile.
 
 ## Integrations
 
@@ -153,11 +157,11 @@ This alpha includes local ecosystem-oriented helpers for audit-log ingestion, or
 
 ## Security
 
-OpenAIMeter uses safe YAML loading, parameterized SQLite statements, CSV formula escaping, metadata depth limits, and local-first storage. Do not store secrets in usage records.
+AIMeter uses safe YAML loading, parameterized SQLite statements, CSV formula escaping, metadata depth limits, and local-first storage. Do not store secrets in usage records.
 
 ## Limitations
 
-Pricing tables may become stale; calculated cost may differ from invoices; local inference estimates depend on supplied assumptions; infrastructure allocation may be approximate; missing components make totals incomplete; provider token semantics differ; estimated tokens are not provider-reported tokens; outcome quality depends on correct instrumentation; cost per success depends on outcome definitions; projected savings are not realized savings; forecasts are simple deterministic projections; anomaly detection is rule-based; currency conversion requires supplied rates; SQLite is for local use, not a large warehouse; adapters depend on external APIs; OpenTelemetry mapping may be incomplete; FOCUS export is experimental unless formally verified; OpenAIMeter does not enforce budgets itself; schema and APIs may change before 1.0.
+Pricing tables may become stale; calculated cost may differ from invoices; local inference estimates depend on supplied assumptions; infrastructure allocation may be approximate; missing components make totals incomplete; provider token semantics differ; estimated tokens are not provider-reported tokens; outcome quality depends on correct instrumentation; cost per success depends on outcome definitions; projected savings are not realized savings; forecasts are simple deterministic projections; anomaly detection is rule-based; currency conversion requires supplied rates; SQLite is for local use, not a large warehouse; adapters depend on external APIs; OpenTelemetry mapping may be incomplete; FOCUS export is experimental unless formally verified; AIMeter does not enforce budgets itself; schema and APIs may change before 1.0.
 
 ## Roadmap
 
@@ -168,6 +172,8 @@ Pricing tables may become stale; calculated cost may differ from invoices; local
 0.1.0a2 added richer pricing-source management, price-expiration warnings, more allocation methods, reconciliation reports, Prometheus export, and static HTML reports.
 
 0.1.0a3 added ecosystem adapter helpers, audit-log ingestion, orchestration instrumentation records, local-cost profile templates, ModelSwapBench-style projections, budget hooks, and ontology-based attribution.
+
+0.1.0a4 renames the project to AIMeter, the distribution to `aimeter-oss`, the import package to `ai_meter`, and the CLI command to `aimeter`. Deprecated compatibility shims are included for the previous import and CLI names during the transition.
 
 ### Planned
 

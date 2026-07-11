@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
-from open_ai_meter.cli import run
+import pytest
+
+from ai_meter.cli import run
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -108,4 +111,17 @@ def test_cli_missing_and_malformed_files_are_controlled(tmp_path: Path, capsys) 
     malformed = tmp_path / "malformed.json"
     malformed.write_text("{", encoding="utf-8")
     assert run(["validate", str(malformed)]) == 2
-    assert "openaimeter: error:" in capsys.readouterr().err
+    assert "aimeter: error:" in capsys.readouterr().err
+
+
+def test_deprecated_cli_alias_warns(monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
+    from ai_meter.cli import deprecated_app
+
+    monkeypatch.setattr(sys, "argv", ["openaimeter", "--help"])
+    with (
+        pytest.warns(DeprecationWarning, match="openaimeter has been renamed to aimeter"),
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        deprecated_app()
+    assert exc_info.value.code == 0
+    assert "openaimeter: warning:" in capsys.readouterr().err

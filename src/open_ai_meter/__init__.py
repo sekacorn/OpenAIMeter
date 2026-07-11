@@ -1,71 +1,18 @@
-"""OpenAIMeter public API."""
+"""Deprecated compatibility import for AIMeter."""
 
-from open_ai_meter.core import (
-    AllocationInput,
-    Budget,
-    CostPerSuccessResult,
-    InfrastructureProfile,
-    Meter,
-    OpenAIMeterError,
-    PricingTable,
-    UsageRecord,
-    allocate_records,
-    apply_ontology_attribution,
-    audit_log_to_record,
-    budget_hooks,
-    calculate_local_inference_cost,
-    calculate_provider_cost,
-    cost_per_success,
-    detect_anomalies,
-    evaluate_budget,
-    export_focus_rows,
-    export_prometheus_metrics,
-    forecast_spend,
-    load_audit_log,
-    load_records,
-    load_yaml,
-    local_cost_profile_catalog,
-    model_swap_projection,
-    orchestration_record,
-    pricing_source_warnings,
-    reconcile_costs,
-    render_static_html_report,
-    safe_csv_cell,
-    validate_record,
+from __future__ import annotations
+
+import warnings
+
+warnings.warn(
+    "open_ai_meter has been renamed to ai_meter and will be removed in a future release.",
+    DeprecationWarning,
+    stacklevel=2,
 )
 
-__all__ = [
-    "AllocationInput",
-    "Budget",
-    "CostPerSuccessResult",
-    "InfrastructureProfile",
-    "Meter",
-    "OpenAIMeterError",
-    "PricingTable",
-    "UsageRecord",
-    "allocate_records",
-    "apply_ontology_attribution",
-    "audit_log_to_record",
-    "budget_hooks",
-    "calculate_local_inference_cost",
-    "calculate_provider_cost",
-    "cost_per_success",
-    "detect_anomalies",
-    "evaluate_budget",
-    "export_focus_rows",
-    "export_prometheus_metrics",
-    "forecast_spend",
-    "load_audit_log",
-    "load_records",
-    "load_yaml",
-    "local_cost_profile_catalog",
-    "model_swap_projection",
-    "orchestration_record",
-    "pricing_source_warnings",
-    "reconcile_costs",
-    "render_static_html_report",
-    "safe_csv_cell",
-    "validate_record",
-]
+from ai_meter import *  # noqa: F403,E402
+from ai_meter import __all__ as _AI_METER_ALL  # noqa: E402
+from ai_meter import __version__ as __version__  # noqa: E402
+from ai_meter.core import AIMeterError as OpenAIMeterError  # noqa: E402
 
-__version__ = "0.1.0a3"
+__all__ = [*_AI_METER_ALL, "__version__", "OpenAIMeterError"]

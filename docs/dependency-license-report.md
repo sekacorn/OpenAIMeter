@@ -15,4 +15,4 @@ Development and verification tools used locally:
 - build
 - Twine
 
-Fresh wheel-environment audit installed current audit tooling and reported no known vulnerabilities for the clean environment dependency set. The package itself was skipped by `pip-audit` because `openaimeter` is not published on PyPI yet.
+Fresh wheel-environment audit installs current audit tooling and checks the clean environment dependency set separately from the developer workstation environment.

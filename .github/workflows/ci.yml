@@ -22,8 +22,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e .[dev]
-      - run: python -c "import open_ai_meter; print(open_ai_meter.__version__)"
-      - run: openaimeter --help
+      - run: python -c "import ai_meter; print(ai_meter.__version__)"
+      - run: aimeter --help
       - run: pytest
 
   quality-and-package:
@@ -45,9 +45,9 @@ jobs:
       - name: Smoke-test wheel installation
         shell: bash
         run: |
-          python -m venv /tmp/openaimeter-wheel
-          /tmp/openaimeter-wheel/bin/python -m pip install --upgrade pip
-          /tmp/openaimeter-wheel/bin/python -m pip install dist/*.whl
-          (cd /tmp && /tmp/openaimeter-wheel/bin/python -c \
-            "import open_ai_meter; print(open_ai_meter.__version__)")
-          (cd /tmp && /tmp/openaimeter-wheel/bin/openaimeter --help)
+          python -m venv /tmp/aimeter-wheel
+          /tmp/aimeter-wheel/bin/python -m pip install --upgrade pip
+          /tmp/aimeter-wheel/bin/python -m pip install dist/*.whl
+          (cd /tmp && /tmp/aimeter-wheel/bin/python -c \
+            "import ai_meter; print(ai_meter.__version__)")
+          (cd /tmp && /tmp/aimeter-wheel/bin/aimeter --help)

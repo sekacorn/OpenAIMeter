@@ -1,19 +1,21 @@
 from __future__ import annotations
 
 import json
+import sys
 from decimal import Decimal
+from importlib import import_module
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
 
-from open_ai_meter.core import (
+from ai_meter.core import (
+    AIMeterError,
     AllocationInput,
     Budget,
     InfrastructureProfile,
     JsonlStore,
     Meter,
-    OpenAIMeterError,
     PricingTable,
     SQLiteStore,
     allocate_costs,
@@ -57,26 +59,26 @@ def test_validate_record_and_decimal_serialization() -> None:
     ],
 )
 def test_invalid_fixtures(path: str, message: str) -> None:
-    with pytest.raises(OpenAIMeterError, match=message):
+    with pytest.raises(AIMeterError, match=message):
         load_records(ROOT / path)
 
 
 def test_inconsistent_token_total_rejected() -> None:
     raw = provider_record()
     raw["usage"]["total_tokens"] = 1
-    with pytest.raises(OpenAIMeterError, match="inconsistent"):
+    with pytest.raises(AIMeterError, match="inconsistent"):
         validate_record(raw)
 
 
 def test_invalid_timestamp_and_nonfinite_decimal_rejected() -> None:
     raw = provider_record()
     raw["start_time"] = "not-a-time"
-    with pytest.raises(OpenAIMeterError, match="invalid timestamp"):
+    with pytest.raises(AIMeterError, match="invalid timestamp"):
         validate_record(raw)
 
     raw = provider_record()
     raw["cost"]["total_cost"] = "NaN"
-    with pytest.raises(OpenAIMeterError, match="finite Decimal"):
+    with pytest.raises(AIMeterError, match="finite Decimal"):
         validate_record(raw)
 
 
@@ -132,7 +134,7 @@ def test_local_inference_cost() -> None:
 
 def test_local_inference_missing_assumptions() -> None:
     record = load_records(ROOT / "examples/local_ollama/usage.json")[0]
-    with pytest.raises(OpenAIMeterError, match="missing"):
+    with pytest.raises(AIMeterError, match="missing"):
         calculate_local_inference_cost(
             record, InfrastructureProfile({"profile": {"currency": "USD", "compute": {}}})
         )
@@ -203,7 +205,7 @@ def test_jsonl_duplicate_rejected(tmp_path: Path) -> None:
     store = JsonlStore(tmp_path / "records.jsonl")
     record = validate_record(provider_record())
     store.append(record)
-    with pytest.raises(OpenAIMeterError, match="duplicate"):
+    with pytest.raises(AIMeterError, match="duplicate"):
         store.append(record)
 
 
@@ -225,10 +227,17 @@ def test_cache_hit_rate() -> None:
 def test_json_shape_validation(tmp_path: Path) -> None:
     scalar = tmp_path / "scalar.json"
     scalar.write_text('"not-a-record"', encoding="utf-8")
-    with pytest.raises(OpenAIMeterError, match="expected JSON object or array"):
+    with pytest.raises(AIMeterError, match="expected JSON object or array"):
         load_records(scalar)
 
     jsonl = tmp_path / "bad.jsonl"
     jsonl.write_text("[]\n", encoding="utf-8")
-    with pytest.raises(OpenAIMeterError, match="JSONL record must be a JSON object"):
+    with pytest.raises(AIMeterError, match="JSONL record must be a JSON object"):
         load_records(jsonl)
+
+
+def test_deprecated_import_shim_warns() -> None:
+    sys.modules.pop("open_ai_meter", None)
+    with pytest.warns(DeprecationWarning, match="open_ai_meter has been renamed to ai_meter"):
+        module = import_module("open_ai_meter")
+    assert module.__version__ == "0.1.0a4"

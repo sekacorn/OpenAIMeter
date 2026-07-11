@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a reproducible OpenAIMeter issue
+about: Report a reproducible aimeter issue
 ---
 
 ## Summary
