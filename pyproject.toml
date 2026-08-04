@@ -8,14 +8,14 @@ version = "0.1.0a4"
 description = "Vendor-neutral AI usage, cost, efficiency, and outcome measurement."
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
-license = { text = "MIT" }
+license = "Apache-2.0"
 authors = [
     { name = "sekacorn" }
 ]
 keywords = ["ai", "finops", "llmops", "metering", "observability", "cost"]
 classifiers = [
     "Development Status :: 3 - Alpha",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",

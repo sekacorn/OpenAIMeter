@@ -187,6 +187,6 @@ Contributions should keep the core offline-capable, deterministic, typed, and ex
 
 ## License
 
-MIT
+[Apache License 2.0](LICENSE)
 
 Author: sekacorn
