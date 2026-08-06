@@ -173,7 +173,9 @@ Pricing tables may become stale; calculated cost may differ from invoices; local
 
 0.1.0a3 added ecosystem adapter helpers, audit-log ingestion, orchestration instrumentation records, local-cost profile templates, ModelSwapBench-style projections, budget hooks, and ontology-based attribution.
 
-0.1.0a4 renames the project to AIMeter, the distribution to `aimeter-oss`, the import package to `ai_meter`, and the CLI command to `aimeter`. Deprecated compatibility shims are included for the previous import and CLI names during the transition.
+0.1.0a5 publishes corrected Apache-2.0 metadata under the public maintainer identity `sekacorn`; runtime behavior is unchanged from 0.1.0a4.
+
+0.1.0a4 renamed the project to AIMeter, the distribution to `aimeter-oss`, the import package to `ai_meter`, and the CLI command to `aimeter`. Deprecated compatibility shims are included for the previous import and CLI names during the transition.
 
 ### Planned
 

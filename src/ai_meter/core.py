@@ -19,7 +19,7 @@ from typing import Any, Literal, Protocol, Self
 
 import yaml
 
-VERSION = "0.1.0a4"
+VERSION = "0.1.0a5"
 SCHEMA_VERSION = "1.0"
 MAX_METADATA_DEPTH = 8
 MAX_RECORD_BYTES = 256_000

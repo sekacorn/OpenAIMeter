@@ -240,4 +240,4 @@ def test_deprecated_import_shim_warns() -> None:
     sys.modules.pop("open_ai_meter", None)
     with pytest.warns(DeprecationWarning, match="open_ai_meter has been renamed to ai_meter"):
         module = import_module("open_ai_meter")
-    assert module.__version__ == "0.1.0a4"
+    assert module.__version__ == "0.1.0a5"

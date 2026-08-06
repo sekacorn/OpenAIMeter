@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.0a5 - 2026-08-06
+
+Publish corrected Apache-2.0 package metadata under the public maintainer identity `sekacorn`. Existing AIMeter behavior and deprecated compatibility shims are unchanged.
+
 ## 0.1.0a4
 
 Renamed the project to AIMeter, the distribution to `aimeter-oss`, the import package to `ai_meter`, and the CLI command to `aimeter`. Added deprecated compatibility shims for the previous import and CLI names during the transition.
