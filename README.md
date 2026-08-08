@@ -2,7 +2,7 @@
 
 AIMeter measures what AI costs, what it accomplishes, and how efficiently it converts compute and model usage into successful outcomes.
 
-Ready for public alpha release with documented limitations.
+Current release: `0.1.0a5` public alpha software with documented limitations.
 
 AIMeter is an alpha, vendor-neutral FinOps and measurement toolkit for AI models, agents, tools, retrieval systems, workflows, and infrastructure. It is local-first and offline-capable. It does not provide invoice accuracy, accounting compliance, automatic savings, production readiness, perfect price data, full OpenTelemetry conformance, or full FOCUS conformance.
 
@@ -173,9 +173,9 @@ Pricing tables may become stale; calculated cost may differ from invoices; local
 
 0.1.0a3 added ecosystem adapter helpers, audit-log ingestion, orchestration instrumentation records, local-cost profile templates, ModelSwapBench-style projections, budget hooks, and ontology-based attribution.
 
-0.1.0a5 publishes corrected Apache-2.0 metadata under the public maintainer identity `sekacorn`; runtime behavior is unchanged from 0.1.0a4.
-
 0.1.0a4 renamed the project to AIMeter, the distribution to `aimeter-oss`, the import package to `ai_meter`, and the CLI command to `aimeter`. Deprecated compatibility shims are included for the previous import and CLI names during the transition.
+
+0.1.0a5 publishes corrected Apache-2.0 metadata under the public maintainer identity `sekacorn`; runtime behavior is unchanged from 0.1.0a4.
 
 ### Planned
 
