@@ -26,6 +26,7 @@ from ai_meter.core import (
     export_prometheus_metrics,
     load_audit_log,
     load_records,
+    load_single_record,
     load_yaml,
     local_cost_profile_catalog,
     model_swap_projection,
@@ -134,10 +135,9 @@ def run(argv: Sequence[str] | None = None) -> int:
         if args.command == "ingest":
             meter = Meter(Path(args.database))
             try:
-                count = 0
-                for record in load_records(Path(args.input)):
-                    meter.ingest(record.data)
-                    count += 1
+                records = load_records(Path(args.input))
+                meter.store.add_many(records)
+                count = len(records)
                 print_json({"status": "ingested", "records": count})
             finally:
                 meter.close()
@@ -196,7 +196,7 @@ def run(argv: Sequence[str] | None = None) -> int:
                     }
                 )
                 return 0
-            record = load_records(Path(args.input))[0]
+            record = load_single_record(Path(args.input))
             print_json(calculate_provider_cost(record, table))
             return 0
         if args.command == "infrastructure":
@@ -207,7 +207,7 @@ def run(argv: Sequence[str] | None = None) -> int:
                 else:
                     print_json(profiles)
                 return 0
-            record = load_records(Path(args.input))[0]
+            record = load_single_record(Path(args.input))
             profile = InfrastructureProfile.from_file(Path(args.profile))
             print_json(calculate_local_inference_cost(record, profile))
             return 0
@@ -215,8 +215,7 @@ def run(argv: Sequence[str] | None = None) -> int:
             records = load_audit_log(Path(args.input))
             meter = Meter(Path(args.database))
             try:
-                for record in records:
-                    meter.ingest(record.data)
+                meter.store.add_many(records)
             finally:
                 meter.close()
             print_json({"status": "ingested", "records": len(records), "adapter": "audit-log"})

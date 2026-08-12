@@ -2,6 +2,8 @@
 
 Commands include `validate`, `ingest`, `summarize`, `report`, `pricing`, `infrastructure`, `budget`, `adapters`, `modelswap`, `export`, and `schema`.
 
+`pricing calculate` and `infrastructure calculate` require exactly one record. Bulk `ingest` validates the full input and rejects duplicate record IDs before writing to SQLite. A cost, provider, budget, forecast, or cost-per-success result with `incomplete_cost_data` has a known subtotal where applicable, but no complete monetary claim.
+
 Additional report formats:
 
 - `aimeter report reconciliation --database build/meter.db`

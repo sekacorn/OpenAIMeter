@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "aimeter-oss"
-version = "0.1.0a5"
+version = "0.2.0b1"
 description = "Vendor-neutral AI usage, cost, efficiency, and outcome measurement."
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
@@ -14,7 +14,7 @@ authors = [
 ]
 keywords = ["ai", "finops", "llmops", "metering", "observability", "cost"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3.11",

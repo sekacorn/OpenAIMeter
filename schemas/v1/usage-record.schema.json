@@ -24,7 +24,14 @@
     },
     "usage": { "type": "object" },
     "performance": { "type": "object" },
-    "cost": { "type": "object" },
+    "cost": {
+      "type": "object",
+      "properties": {
+        "currency": { "type": "string" },
+        "total_cost": { "type": ["string", "number", "null"] }
+      },
+      "description": "An absent or null total_cost means unknown, not zero."
+    },
     "outcome": { "type": "object" },
     "correlation": { "type": "object" },
     "metadata": { "type": "object" }

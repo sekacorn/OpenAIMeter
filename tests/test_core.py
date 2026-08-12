@@ -29,11 +29,15 @@ from ai_meter.core import (
     export_csv,
     export_focus_rows,
     forecast_spend,
+    load_audit_log,
     load_records,
+    load_single_record,
+    load_yaml,
     replacement_savings,
     report,
     safe_csv_cell,
     success_rate,
+    summarize_costs,
     validate_record,
 )
 
@@ -111,9 +115,8 @@ def test_missing_active_pricing_rate_is_unknown_not_zero() -> None:
 
 def test_ambiguous_pricing() -> None:
     entry = PricingTable.from_file(ROOT / "examples/provider_api/pricing.yaml").entries[0]
-    table = PricingTable(version="x", entries=[entry, dict(entry)])
-    result = calculate_provider_cost(validate_record(provider_record()), table)
-    assert result["resolution"] == "ambiguous"
+    with pytest.raises(AIMeterError, match="overlapping"):
+        PricingTable(version="x", entries=[entry, dict(entry)])
 
 
 def test_provider_reported_cost_kept_separate() -> None:
@@ -192,7 +195,9 @@ def test_storage_reports_and_exports(tmp_path: Path) -> None:
     try:
         records = store.all()
         assert report(records, "cost-per-success")["status"] == "defined"
-        assert report(records, "providers")["providers"]["example-provider"] == "0.003040"
+        provider = report(records, "providers")["providers"]["example-provider"]["USD"]
+        assert provider["total_cost"] == "0.003040"
+        assert provider["status"] == "complete"
         csv_path = tmp_path / "usage.csv"
         export_csv(records, csv_path)
         assert "provider-api-001" in csv_path.read_text()
@@ -236,8 +241,148 @@ def test_json_shape_validation(tmp_path: Path) -> None:
         load_records(jsonl)
 
 
+def test_unknown_cost_is_never_aggregated_as_zero() -> None:
+    raw = provider_record()
+    del raw["cost"]["total_cost"]
+    record = validate_record(raw)
+    assert record.total_cost is None
+    summary = summarize_costs([record])
+    assert summary.status == "incomplete_cost_data"
+    assert summary.total_cost is None
+    assert summary.known_total_cost == Decimal("0")
+    result = cost_per_success([record])
+    assert result.status == "incomplete_cost_data"
+    assert result.value is None
+    budget = Budget("b", Decimal("1"), "USD", Decimal("80"), Decimal("100"))
+    assert evaluate_budget([record], budget)["status"] == "incomplete_cost_data"
+
+
+def test_unknown_outcome_is_not_a_failed_outcome() -> None:
+    raw = provider_record()
+    raw["outcome"] = {}
+    record = validate_record(raw)
+    assert record.success_weight is None
+    assert success_rate([record]) is None
+    assert cost_per_success([record]).status == "incomplete_outcome_data"
+    assert report([record], "outcomes")["status"] == "incomplete_outcome_data"
+
+
+def test_provider_report_keeps_currencies_separate() -> None:
+    usd = validate_record(provider_record())
+    eur_data = provider_record()
+    eur_data["record_id"] = "provider-api-eur"
+    eur_data["cost"]["currency"] = "EUR"
+    eur_data["cost"]["total_cost"] = "0.004000"
+    eur = validate_record(eur_data)
+
+    providers = report([usd, eur], "providers")["providers"]["example-provider"]
+    assert providers["USD"]["total_cost"] == "0.003040"
+    assert providers["EUR"]["total_cost"] == "0.004000"
+
+
+def test_validation_does_not_mutate_input_or_generate_ids() -> None:
+    raw = provider_record()
+    original = json.loads(json.dumps(raw))
+    validate_record(raw)
+    assert raw == original
+    del raw["record_id"]
+    with pytest.raises(AIMeterError, match="record_id is required"):
+        validate_record(raw)
+
+
+def test_pricing_validity_and_missing_usage_are_unknown() -> None:
+    entry = dict(PricingTable.from_file(ROOT / "examples/provider_api/pricing.yaml").entries[0])
+    entry["effective_end"] = "2026-07-02T00:00:00Z"
+    table = PricingTable(version="x", entries=[entry])
+    result = calculate_provider_cost(validate_record(provider_record()), table)
+    assert result["status"] == "unknown"
+    assert result["resolution"] == "outside_validity_period"
+
+    raw = provider_record()
+    del raw["usage"]["output_tokens"]
+    result = calculate_provider_cost(
+        validate_record(raw), PricingTable.from_file(ROOT / "examples/provider_api/pricing.yaml")
+    )
+    assert result["status"] == "unknown"
+    assert result["resolution"] == "missing_usage"
+
+    calculated = calculate_provider_cost(
+        validate_record(provider_record()),
+        PricingTable.from_file(ROOT / "examples/provider_api/pricing.yaml"),
+    )
+    assert calculated["pricing_provenance"]["source_type"] == "test_fixture"
+
+
+def test_duplicate_keys_and_duplicate_record_ids_are_rejected(tmp_path: Path) -> None:
+    duplicate_key = tmp_path / "duplicate.json"
+    duplicate_key.write_text('{"schema_version":"1.0","schema_version":"1.0"}', encoding="utf-8")
+    with pytest.raises(AIMeterError, match="duplicate JSON key"):
+        load_records(duplicate_key)
+
+    first = provider_record()
+    duplicate_records = tmp_path / "duplicate-records.json"
+    duplicate_records.write_text(json.dumps([first, first]), encoding="utf-8")
+    with pytest.raises(AIMeterError, match="duplicate record_id"):
+        load_records(duplicate_records)
+
+    duplicate_yaml = tmp_path / "duplicate.yaml"
+    duplicate_yaml.write_text("version: one\nversion: two\nentries: []\n", encoding="utf-8")
+    with pytest.raises(AIMeterError, match="duplicate YAML key"):
+        PricingTable.from_file(duplicate_yaml)
+
+    unsupported_yaml_key = tmp_path / "unsupported-key.yaml"
+    unsupported_yaml_key.write_text("? [not, scalar]\n: value\n", encoding="utf-8")
+    with pytest.raises(AIMeterError, match="keys must be scalar"):
+        load_yaml(unsupported_yaml_key)
+
+
+def test_single_record_calculators_reject_empty_or_multiple_input(tmp_path: Path) -> None:
+    path = tmp_path / "records.json"
+    path.write_text(
+        json.dumps([provider_record(), {**provider_record(), "record_id": "two"}]), encoding="utf-8"
+    )
+    with pytest.raises(AIMeterError, match="exactly one"):
+        load_single_record(path)
+
+
+def test_sqlite_batch_is_atomic_and_preserves_unknown_costs(tmp_path: Path) -> None:
+    db = tmp_path / "meter.db"
+    record = validate_record(provider_record())
+    store = SQLiteStore(db)
+    try:
+        with pytest.raises(AIMeterError, match="duplicate record_id"):
+            store.add_many([record, record])
+        assert store.all() == []
+
+        unknown = provider_record()
+        unknown["record_id"] = "unknown-cost"
+        del unknown["cost"]["total_cost"]
+        store.add(validate_record(unknown))
+        assert store.all()[0].total_cost is None
+    finally:
+        store.close()
+
+
+def test_audit_log_adapter_preserves_absent_cost_as_unknown(tmp_path: Path) -> None:
+    source = tmp_path / "events.jsonl"
+    source.write_text(
+        json.dumps(
+            {
+                "event_id": "event-without-cost",
+                "time": "2026-07-06T15:00:00Z",
+                "provider": "example-provider",
+                "model": "fictional-fast-1",
+                "usage": {},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    assert load_audit_log(source)[0].total_cost is None
+
+
 def test_deprecated_import_shim_warns() -> None:
     sys.modules.pop("open_ai_meter", None)
     with pytest.warns(DeprecationWarning, match="open_ai_meter has been renamed to ai_meter"):
         module = import_module("open_ai_meter")
-    assert module.__version__ == "0.1.0a5"
+    assert module.__version__ == "0.2.0b1"

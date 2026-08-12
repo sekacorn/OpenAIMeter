@@ -2,9 +2,9 @@
 
 AIMeter measures what AI costs, what it accomplishes, and how efficiently it converts compute and model usage into successful outcomes.
 
-Current release: `0.1.0a5` public alpha software with documented limitations.
+Current release candidate: `0.2.0b1` public Beta software with documented limitations. It is not yet tagged or published.
 
-AIMeter is an alpha, vendor-neutral FinOps and measurement toolkit for AI models, agents, tools, retrieval systems, workflows, and infrastructure. It is local-first and offline-capable. It does not provide invoice accuracy, accounting compliance, automatic savings, production readiness, perfect price data, full OpenTelemetry conformance, or full FOCUS conformance.
+AIMeter is a Beta, vendor-neutral FinOps and measurement toolkit for AI models, agents, tools, retrieval systems, workflows, and infrastructure. It is local-first and offline-capable. It does not provide invoice accuracy, accounting compliance, automatic savings, production readiness, perfect price data, full OpenTelemetry conformance, or full FOCUS conformance.
 
 ## Why
 
@@ -20,6 +20,7 @@ This project was previously published as openaimeter / OpenAIMeter. It has been 
 
 - Versioned usage records for model, agent, tool, retrieval, infrastructure, outcome, budget, pricing, and optimization events.
 - Decimal cost accounting for provider API usage, local inference estimates, allocations, outcomes, budgets, forecasts, and savings.
+- Completeness-aware aggregates: an absent total cost or outcome stays unknown and cannot become a complete total, budget result, forecast, or cost-per-success claim.
 - Local JSONL and SQLite storage.
 - Cost per successful outcome, provider reports, outcome reports, anomaly reports, CSV export, and FOCUS-inspired export helpers.
 - OpenTelemetry-compatible field mapping helpers and W3C trace/span fields in records.
@@ -54,7 +55,7 @@ The provider API example uses fictional, versioned pricing in `examples/provider
 aimeter pricing calculate examples/provider_api/usage.json --pricing examples/provider_api/pricing.yaml
 ```
 
-Fictional prices are test fixtures only. Missing prices are reported as unknown, never as zero.
+Fictional prices are test fixtures only. Missing prices, out-of-window prices, missing billable usage, and malformed or ambiguous pricing are reported as unknown, never as zero. Pricing entries are local, versioned, time-bounded, and include a source reference; calculated list-price arithmetic is not proof of an invoice amount or negotiated enterprise rate.
 
 ## Local Model Example
 
@@ -74,7 +75,7 @@ AIMeter calculates:
 total included cost / successful outcome weight
 ```
 
-Zero attempts and zero successes return explicit statuses rather than dividing by zero.
+Zero attempts and zero successes return explicit statuses rather than dividing by zero. If any included cost or outcome is unknown, cost per success is marked incomplete and has no value. API success is not a business outcome unless an outcome is explicitly recorded.
 
 ## Budgets
 
@@ -123,7 +124,7 @@ finally:
 
 ## Pricing
 
-Pricing tables are local, versioned, and explicit about source references. Rates are stored as currency amount per 1,000,000 tokens. The alpha includes fictional fixture pricing only.
+Pricing tables are local, versioned, and explicit about source references. Rates are stored as currency amount per 1,000,000 tokens. Resolution requires a matching provider, model key, region, currency, and effective time window. Overlapping windows and duplicate YAML keys are rejected. The Beta includes fictional fixture pricing only.
 
 Pricing source management can list source references, source types, verification dates, effective ranges, expiration dates, and stale/expired warnings.
 
@@ -139,7 +140,7 @@ Outcomes include explicit success, score, threshold, quantity, unit, evaluator, 
 
 ## Reports
 
-Reports are deterministic JSON by default, with CSV export escaping spreadsheet formulas. Prometheus text export and self-contained static HTML reports are available. FOCUS-inspired rows are available through the Python API.
+Reports are deterministic JSON by default, with CSV export escaping spreadsheet formulas. Cost reports include a completeness status, known subtotal, and unknown-record count; a complete total is emitted only when every included cost is known. Provider reports keep subtotals separate by currency. Prometheus text export and self-contained static HTML reports are available. FOCUS-inspired rows are available through the Python API.
 
 ## OpenTelemetry Compatibility
 
@@ -153,11 +154,15 @@ The export helper maps AIMeter records to a small FOCUS-inspired cost shape. It 
 
 Core functionality requires no model provider, cloud SDK, or observability vendor. Optional adapters should implement the `Adapter` protocol and use real public APIs only.
 
-This alpha includes local ecosystem-oriented helpers for audit-log ingestion, orchestration instrumentation records, ModelSwapBench-style replacement projections, budget hook actions, and ontology-based attribution mappings. These helpers are offline and do not claim external integration test results.
+This Beta includes local ecosystem-oriented helpers for audit-log ingestion, orchestration instrumentation records, ModelSwapBench-style replacement projections, budget hook actions, and ontology-based attribution mappings. These helpers are offline and do not claim external integration test results.
 
 ## Security
 
-AIMeter uses safe YAML loading, parameterized SQLite statements, CSV formula escaping, metadata depth limits, and local-first storage. Do not store secrets in usage records.
+AIMeter uses bounded UTF-8 JSON/JSONL/YAML loading, duplicate-key rejection, duplicate record-ID rejection, parameterized SQLite statements, CSV formula escaping, HTML escaping, metadata and structural depth limits, and local-first storage. SQLite batch ingestion is transactional. Do not store secrets in usage records.
+
+## Determinism and Storage
+
+Records require a stable `record_id`; validation does not generate one or mutate the caller's input. JSON/JSONL imports reject duplicate IDs before aggregation, and SQLite rejects duplicate IDs atomically. JSONL is append-only local storage; SQLite is a local convenience index, not an accounting ledger or enterprise warehouse. Equivalent valid records and pricing tables produce deterministic ordering and six-decimal monetary serialization.
 
 ## Limitations
 
@@ -175,11 +180,11 @@ Pricing tables may become stale; calculated cost may differ from invoices; local
 
 0.1.0a4 renamed the project to AIMeter, the distribution to `aimeter-oss`, the import package to `ai_meter`, and the CLI command to `aimeter`. Deprecated compatibility shims are included for the previous import and CLI names during the transition.
 
-0.1.0a5 publishes corrected Apache-2.0 metadata under the public maintainer identity `sekacorn`; runtime behavior is unchanged from 0.1.0a4.
+0.1.0a5 published corrected Apache-2.0 metadata under the public maintainer identity `sekacorn`; runtime behavior was unchanged from 0.1.0a4.
 
 ### Planned
 
-0.2 will focus on optional PostgreSQL storage, provider invoice imports, signed pricing manifests, organization-level allocation rules, chargeback and showback exports, a dashboard starter, and richer cost-export compatibility.
+The current pre-Beta hardening work makes unknown cost and outcome states explicit, rejects ambiguous pricing and duplicate input, and preserves deterministic local ingestion. Future work may include optional PostgreSQL storage, provider invoice imports, signed pricing manifests, organization-level allocation rules, chargeback and showback exports, a dashboard starter, and richer cost-export compatibility.
 
 1.0 will require a stable measurement schema, compatibility policy, verified OpenTelemetry profile, verified cost-export profile, migration policy, security review, and an enterprise-scale storage adapter.
 

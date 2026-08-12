@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.0b1 - 2026-08-12
+
+First Beta candidate. Hardened the accounting core so unknown cost and outcome data remain incomplete through aggregates and cost-per-success reporting; pricing tables reject duplicate YAML keys and overlapping validity windows; out-of-window pricing and missing billed usage produce unknown calculations; JSON/JSONL ingestion rejects duplicate keys and record IDs with bounded local input handling; and SQLite batch ingestion is atomic.
+
 ## 0.1.0a5 - 2026-08-06
 
 Publish corrected Apache-2.0 package metadata under the public maintainer identity `sekacorn`. Existing AIMeter behavior and deprecated compatibility shims are unchanged.

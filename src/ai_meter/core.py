@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import copy
 import csv
 import html
 import json
 import math
 import re
 import sqlite3
-import uuid
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -18,11 +18,18 @@ from pathlib import Path
 from typing import Any, Literal, Protocol, Self
 
 import yaml
+from yaml.resolver import BaseResolver
 
-VERSION = "0.1.0a5"
+VERSION = "0.2.0b1"
 SCHEMA_VERSION = "1.0"
 MAX_METADATA_DEPTH = 8
 MAX_RECORD_BYTES = 256_000
+MAX_INPUT_BYTES = 4_000_000
+MAX_RECORDS_PER_INPUT = 10_000
+MAX_PRICING_ENTRIES = 10_000
+MAX_STRING_BYTES = 32_000
+MAX_CONTAINER_ITEMS = 10_000
+MAX_STRUCTURE_DEPTH = 32
 Currency = Literal["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "CHF"]
 VALID_CURRENCIES = {"USD", "EUR", "GBP", "CAD", "AUD", "JPY", "CHF"}
 HOSTING_MODES = {
@@ -86,6 +93,29 @@ CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 
 class AIMeterError(ValueError):
     """Base validation or accounting error."""
+
+
+class _DuplicateKeyLoader(yaml.SafeLoader):
+    """Safe YAML loader that rejects duplicate mapping keys."""
+
+
+def _construct_unique_mapping(
+    loader: _DuplicateKeyLoader, node: yaml.nodes.MappingNode, deep: bool = False
+) -> dict[Any, Any]:
+    mapping: dict[Any, Any] = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        try:
+            duplicate = key in mapping
+        except TypeError as exc:
+            raise AIMeterError("YAML mapping keys must be scalar values") from exc
+        if duplicate:
+            raise AIMeterError(f"duplicate YAML key: {key}")
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+_DuplicateKeyLoader.add_constructor(BaseResolver.DEFAULT_MAPPING_TAG, _construct_unique_mapping)
 
 
 class Adapter(Protocol):
@@ -165,6 +195,61 @@ def metadata_depth(value: Any, depth: int = 0) -> int:
     return max_depth
 
 
+def validate_structure(value: Any, context: str) -> None:
+    """Apply bounded, JSON-compatible structure limits to untrusted local input."""
+
+    stack: list[tuple[Any, int]] = [(value, 0)]
+    while stack:
+        current, depth = stack.pop()
+        if depth > MAX_STRUCTURE_DEPTH:
+            raise AIMeterError(f"{context} nesting exceeds safety limit")
+        if isinstance(current, str):
+            if len(current.encode("utf-8")) > MAX_STRING_BYTES:
+                raise AIMeterError(f"{context} contains an oversized string")
+        elif isinstance(current, dict):
+            if len(current) > MAX_CONTAINER_ITEMS:
+                raise AIMeterError(f"{context} contains too many mapping items")
+            stack.extend((item, depth + 1) for item in current.values())
+        elif isinstance(current, list):
+            if len(current) > MAX_CONTAINER_ITEMS:
+                raise AIMeterError(f"{context} contains too many list items")
+            stack.extend((item, depth + 1) for item in current)
+
+
+def _reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise AIMeterError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def load_json_value(text: str, context: str) -> Any:
+    """Parse JSON while rejecting duplicate object keys."""
+
+    try:
+        return json.loads(text, object_pairs_hook=_reject_duplicate_json_keys)
+    except json.JSONDecodeError as exc:
+        raise AIMeterError(f"invalid JSON {context}: {exc.msg}") from exc
+
+
+def read_limited_text(path: Path, limit: int, context: str) -> str:
+    """Read UTF-8 input with a deterministic byte limit."""
+
+    try:
+        with path.open("rb") as handle:
+            content = handle.read(limit + 1)
+    except OSError as exc:
+        raise AIMeterError(f"unable to read {context}: {exc}") from exc
+    if len(content) > limit:
+        raise AIMeterError(f"{context} exceeds {limit} byte safety limit")
+    try:
+        return content.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise AIMeterError(f"{context} must be valid UTF-8") from exc
+
+
 def safe_csv_cell(value: Any) -> str:
     """Escape CSV cells that spreadsheet programs may treat as formulas."""
 
@@ -190,16 +275,38 @@ class UsageRecord:
         return str(self.data.get("cost", {}).get("currency", "USD"))
 
     @property
-    def total_cost(self) -> Decimal:
-        return decimal_from(self.data.get("cost", {}).get("total_cost", "0"), "cost.total_cost")
+    def total_cost(self) -> Decimal | None:
+        """Return a known total cost, or ``None`` when the record is incomplete."""
+
+        value = self.data.get("cost", {}).get("total_cost")
+        return None if value is None else decimal_from(value, "cost.total_cost")
 
     @property
-    def success_weight(self) -> Decimal:
+    def has_known_cost(self) -> bool:
+        """Whether this record carries a known total cost."""
+
+        return self.total_cost is not None
+
+    @property
+    def has_known_outcome(self) -> bool:
+        """Whether the record supplies enough information to evaluate success."""
+
+        outcome = self.data.get("outcome") or {}
+        if outcome.get("correction_status") == "invalidated":
+            return True
+        if isinstance(outcome.get("success"), bool):
+            return True
+        return outcome.get("score") is not None and outcome.get("threshold") is not None
+
+    @property
+    def success_weight(self) -> Decimal | None:
         outcome = self.data.get("outcome") or {}
         if outcome.get("correction_status") == "invalidated":
             return Decimal("0")
         if outcome.get("success") is True:
             return decimal_from(outcome.get("quantity", "1"), "outcome.quantity")
+        if outcome.get("success") is False:
+            return Decimal("0")
         score = outcome.get("score")
         threshold = outcome.get("threshold")
         if score is not None and threshold is not None:
@@ -209,11 +316,12 @@ class UsageRecord:
                 if score_d >= decimal_from(threshold, "outcome.threshold")
                 else Decimal("0")
             )
-        return Decimal("0")
+        return None
 
     @property
-    def latency_ms(self) -> Decimal:
-        return decimal_from(self.data.get("performance", {}).get("latency_ms", "0"), "latency_ms")
+    def latency_ms(self) -> Decimal | None:
+        value = self.data.get("performance", {}).get("latency_ms")
+        return None if value is None else decimal_from(value, "latency_ms")
 
     def to_json(self) -> str:
         return json.dumps(self.data, sort_keys=True, separators=(",", ":"), default=str)
@@ -222,29 +330,40 @@ class UsageRecord:
 def validate_record(raw: dict[str, Any]) -> UsageRecord:
     """Validate and normalize a usage record without changing its economic meaning."""
 
-    encoded_len = len(json.dumps(raw, default=str).encode("utf-8"))
+    if not isinstance(raw, dict):
+        raise AIMeterError("record must be a JSON object")
+    try:
+        normalized = copy.deepcopy(raw)
+        encoded_len = len(json.dumps(normalized, default=str).encode("utf-8"))
+    except (TypeError, ValueError, RecursionError) as exc:
+        raise AIMeterError("record must be JSON-serializable") from exc
     if encoded_len > MAX_RECORD_BYTES:
         raise AIMeterError("record is too large")
-    if raw.get("schema_version") != SCHEMA_VERSION:
+    validate_structure(normalized, "record")
+    if normalized.get("schema_version") != SCHEMA_VERSION:
         raise AIMeterError("schema_version must be 1.0")
-    if not raw.get("record_id"):
-        raw["record_id"] = str(uuid.uuid7() if hasattr(uuid, "uuid7") else uuid.uuid4())
-    record_type = str(raw.get("record_type", ""))
+    if not isinstance(normalized.get("record_id"), str) or not normalized["record_id"]:
+        raise AIMeterError("record_id is required")
+    record_type = str(normalized.get("record_type", ""))
     if record_type not in RECORD_TYPES and not re.match(
         r"^[a-z][a-z0-9_]*\.[a-z0-9_.-]+$", record_type
     ):
         raise AIMeterError(f"unsupported record_type: {record_type}")
-    start = parse_time(str(raw["start_time"]))
-    end = parse_time(str(raw["end_time"]))
+    if not normalized.get("start_time") or not normalized.get("end_time"):
+        raise AIMeterError("start_time and end_time are required")
+    start = parse_time(str(normalized["start_time"]))
+    end = parse_time(str(normalized["end_time"]))
     if end < start:
         raise AIMeterError("end_time must not be before start_time")
-    model = raw.get("model") or {}
+    model = require_mapping(normalized.get("model"), "model")
     if not model.get("provider"):
         raise AIMeterError("model.provider is required")
+    if not model.get("requested_model"):
+        raise AIMeterError("model.requested_model is required")
     hosting = str(model.get("hosting", "unknown"))
     if hosting not in HOSTING_MODES:
         raise AIMeterError(f"unsupported hosting mode: {hosting}")
-    usage = raw.get("usage") or {}
+    usage = require_mapping(normalized.get("usage"), "usage")
     known_total = 0
     all_components_present = True
     for key in (
@@ -271,15 +390,17 @@ def validate_record(raw: dict[str, Any]) -> UsageRecord:
         semantics = usage.get("provider_total_semantics")
         if all_components_present and total != known_total and semantics is None:
             raise AIMeterError("usage.total_tokens is inconsistent with supplied components")
-    cost = raw.setdefault("cost", {})
+    require_mapping(normalized.get("performance"), "performance")
+    cost = require_mapping(normalized.get("cost"), "cost")
     require_currency(cost.get("currency", "USD"))
     for key in ("provider_cost", "infrastructure_cost", "allocated_cost", "total_cost"):
         if key in cost and cost[key] is not None:
             decimal_from(cost[key], f"cost.{key}")
-    metadata = raw.get("metadata") or {}
+    metadata = normalized.get("metadata") or {}
+    require_mapping(metadata, "metadata")
     if metadata_depth(metadata) > MAX_METADATA_DEPTH:
         raise AIMeterError("metadata depth exceeds safety limit")
-    return UsageRecord(raw)
+    return UsageRecord(normalized)
 
 
 @dataclass(frozen=True)
@@ -289,10 +410,83 @@ class PricingTable:
     version: str
     entries: list[dict[str, Any]]
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.version, str) or not self.version:
+            raise AIMeterError("pricing version is required")
+        if not isinstance(self.entries, list) or len(self.entries) > MAX_PRICING_ENTRIES:
+            raise AIMeterError("pricing entries exceed safety limit")
+        validated: list[dict[str, Any]] = []
+        for index, raw_entry in enumerate(self.entries):
+            entry = require_mapping(raw_entry, f"pricing entry {index}")
+            required = ("provider", "model_key", "currency", "effective_start", "source_reference")
+            if any(not entry.get(key) for key in required):
+                raise AIMeterError(
+                    f"pricing entry {index} is missing required provenance or identity"
+                )
+            require_currency(entry["currency"])
+            start = parse_time(str(entry["effective_start"]))
+            end_raw = entry.get("effective_end")
+            if end_raw is not None and parse_time(str(end_raw)) <= start:
+                raise AIMeterError(f"pricing entry {index} has an invalid effective range")
+            if entry.get("verified_date") is not None:
+                verified = str(entry["verified_date"])
+                parse_time(f"{verified}T00:00:00Z" if len(verified) == 10 else verified)
+            if entry.get("expires_at") is not None:
+                parse_time(str(entry["expires_at"]))
+            rate_fields = (
+                "input_token_price",
+                "output_token_price",
+                "cached_input_price",
+                "cached_output_price",
+                "reasoning_token_price",
+                "per_request_price",
+            )
+            if not any(entry.get(field) is not None for field in rate_fields):
+                raise AIMeterError(f"pricing entry {index} has no billable rates")
+            for field in rate_fields:
+                if entry.get(field) is not None and decimal_from(entry[field], field) < 0:
+                    raise AIMeterError(f"pricing entry {index} has a negative rate")
+            discount = decimal_from(entry.get("batch_discount", "0"), "batch_discount")
+            if not Decimal("0") <= discount <= Decimal("100"):
+                raise AIMeterError("batch_discount must be between 0 and 100")
+            validated.append(copy.deepcopy(entry))
+        self._validate_no_overlaps(validated)
+        object.__setattr__(self, "entries", validated)
+
+    @staticmethod
+    def _validate_no_overlaps(entries: list[dict[str, Any]]) -> None:
+        for index, entry in enumerate(entries):
+            start = parse_time(str(entry["effective_start"]))
+            end = parse_time(str(entry["effective_end"])) if entry.get("effective_end") else None
+            identity = (
+                entry["provider"],
+                entry["model_key"],
+                entry["currency"],
+                entry.get("region"),
+            )
+            for other in entries[index + 1 :]:
+                other_identity = (
+                    other["provider"],
+                    other["model_key"],
+                    other["currency"],
+                    other.get("region"),
+                )
+                if identity != other_identity:
+                    continue
+                other_start = parse_time(str(other["effective_start"]))
+                other_end = (
+                    parse_time(str(other["effective_end"])) if other.get("effective_end") else None
+                )
+                if (end is None or other_start < end) and (other_end is None or start < other_end):
+                    raise AIMeterError("pricing entries have overlapping effective ranges")
+
     @classmethod
     def from_file(cls, path: Path) -> Self:
         data = load_yaml(path)
-        return cls(version=str(data["version"]), entries=list(data.get("entries", [])))
+        entries = data.get("entries")
+        if not isinstance(entries, list):
+            raise AIMeterError("pricing entries must be a list")
+        return cls(version=str(data.get("version", "")), entries=entries)
 
     def resolve(self, record: UsageRecord) -> tuple[str, dict[str, Any] | None]:
         model = record.data["model"]
@@ -321,15 +515,17 @@ class PricingTable:
             return "exact", candidates[0]
         if len(candidates) > 1:
             return "ambiguous", None
-        fallbacks = [
+        matching_identity = [
             entry
             for entry in self.entries
             if entry.get("provider") == model.get("provider")
-            and entry.get("model_key") == model.get("requested_model")
+            and entry.get("model_key")
+            in {model.get("pricing_key"), model.get("response_model"), model.get("requested_model")}
+            and entry.get("region") in {None, model.get("region")}
             and entry.get("currency") == cost_currency
         ]
-        if len(fallbacks) == 1:
-            return "fallback", fallbacks[0]
+        if matching_identity:
+            return "outside_validity_period", None
         return "missing", None
 
     def sources(self) -> list[dict[str, Any]]:
@@ -436,10 +632,25 @@ def calculate_provider_cost(record: UsageRecord, pricing: PricingTable) -> dict[
         "cached_output": ("cached_output_tokens", "cached_output_price"),
         "reasoning": ("reasoning_tokens", "reasoning_token_price"),
     }
+    missing_usage = [
+        usage_field
+        for usage_field, rate_field in token_rates.values()
+        if entry.get(rate_field) is not None and usage.get(usage_field) is None
+    ]
+    if missing_usage:
+        return {
+            "status": "unknown",
+            "provider_cost": None,
+            "resolution": "missing_usage",
+            "pricing_version": pricing.version,
+            "missing_usage": missing_usage,
+            "components": {},
+        }
     missing_rates = [
         rate_field
         for usage_field, rate_field in token_rates.values()
-        if decimal_from(usage.get(usage_field, 0), usage_field) > 0
+        if usage.get(usage_field) is not None
+        and decimal_from(usage[usage_field], usage_field) > 0
         and entry.get(rate_field) is None
     ]
     if missing_rates:
@@ -478,6 +689,14 @@ def calculate_provider_cost(record: UsageRecord, pricing: PricingTable) -> dict[
         "provider_cost": money(subtotal),
         "resolution": resolution,
         "pricing_version": pricing.version,
+        "pricing_provenance": {
+            "source_reference": entry["source_reference"],
+            "source_type": entry.get("source_type", "unknown"),
+            "verified_date": entry.get("verified_date"),
+            "effective_start": entry["effective_start"],
+            "effective_end": entry.get("effective_end"),
+            "expires_at": entry.get("expires_at"),
+        },
         "components": {key: money(value) for key, value in components.items()},
     }
 
@@ -577,14 +796,21 @@ def allocation_weights(records: Iterable[UsageRecord], method: str) -> list[Deci
     if method == "request_count":
         return [Decimal("1") for _ in items]
     if method == "duration":
-        return [max(item.latency_ms, Decimal("0")) for item in items]
+        if any(item.latency_ms is None for item in items):
+            raise AIMeterError("duration allocation requires known latency for every record")
+        return [max(item.latency_ms or Decimal("0"), Decimal("0")) for item in items]
     if method == "token_count":
+        if any(item.data.get("usage", {}).get("total_tokens") is None for item in items):
+            raise AIMeterError("token allocation requires known total_tokens for every record")
         return [
-            decimal_from(item.data.get("usage", {}).get("total_tokens", "0"), "usage.total_tokens")
-            for item in items
+            decimal_from(item.data["usage"]["total_tokens"], "usage.total_tokens") for item in items
         ]
     if method == "successful_outcome":
-        return [item.success_weight for item in items]
+        if any(item.success_weight is None for item in items):
+            raise AIMeterError(
+                "successful outcome allocation requires known outcomes for every record"
+            )
+        return [item.success_weight or Decimal("0") for item in items]
     if method == "workflow_weight":
         return [
             decimal_from(
@@ -625,6 +851,8 @@ class CostPerSuccessResult:
     denominator: Decimal
     status: str
     currency: str
+    unknown_cost_records: int = 0
+    unknown_outcome_records: int = 0
 
     @property
     def value(self) -> Decimal | None:
@@ -642,11 +870,67 @@ def cost_per_success(records: Iterable[UsageRecord]) -> CostPerSuccessResult:
     currencies = {item.currency for item in items}
     if len(currencies) != 1:
         raise AIMeterError("cannot combine currencies")
-    numerator = sum((item.total_cost for item in items), Decimal("0"))
-    denominator = sum((item.success_weight for item in items), Decimal("0"))
+    known_costs = [item.total_cost for item in items if item.total_cost is not None]
+    known_outcomes = [item.success_weight for item in items if item.success_weight is not None]
+    unknown_cost_records = len(items) - len(known_costs)
+    unknown_outcome_records = len(items) - len(known_outcomes)
+    numerator = sum(known_costs, Decimal("0"))
+    denominator = sum(known_outcomes, Decimal("0"))
+    currency = currencies.pop()
+    if unknown_cost_records:
+        return CostPerSuccessResult(
+            numerator,
+            denominator,
+            "incomplete_cost_data",
+            currency,
+            unknown_cost_records,
+            unknown_outcome_records,
+        )
+    if unknown_outcome_records:
+        return CostPerSuccessResult(
+            numerator,
+            denominator,
+            "incomplete_outcome_data",
+            currency,
+            unknown_cost_records,
+            unknown_outcome_records,
+        )
     if denominator == 0:
-        return CostPerSuccessResult(numerator, denominator, "zero_successes", currencies.pop())
-    return CostPerSuccessResult(numerator, denominator, "defined", currencies.pop())
+        return CostPerSuccessResult(numerator, denominator, "zero_successes", currency)
+    return CostPerSuccessResult(numerator, denominator, "defined", currency)
+
+
+@dataclass(frozen=True)
+class CostSummary:
+    """A cost aggregate that preserves whether all included costs are known."""
+
+    records: int
+    currency: str
+    known_total_cost: Decimal
+    unknown_cost_records: int
+
+    @property
+    def status(self) -> str:
+        return "complete" if self.unknown_cost_records == 0 else "incomplete_cost_data"
+
+    @property
+    def total_cost(self) -> Decimal | None:
+        return self.known_total_cost if self.status == "complete" else None
+
+
+def summarize_costs(records: Iterable[UsageRecord]) -> CostSummary:
+    """Summarize costs without representing unknown records as zero."""
+
+    items = list(records)
+    if not items:
+        return CostSummary(0, "USD", Decimal("0"), 0)
+    currencies = {item.currency for item in items}
+    if len(currencies) != 1:
+        raise AIMeterError("cannot combine currencies")
+    known = [item.total_cost for item in items if item.total_cost is not None]
+    return CostSummary(
+        len(items), currencies.pop(), sum(known, Decimal("0")), len(items) - len(known)
+    )
 
 
 @dataclass(frozen=True)
@@ -678,10 +962,20 @@ class Budget:
 def evaluate_budget(records: Iterable[UsageRecord], budget: Budget) -> dict[str, Any]:
     """Evaluate budget utilization deterministically."""
 
-    total = sum(
-        (record.total_cost for record in records if record.currency == budget.currency),
-        Decimal("0"),
-    )
+    matching = [record for record in records if record.currency == budget.currency]
+    summary = summarize_costs(matching)
+    total = summary.known_total_cost
+    if summary.unknown_cost_records:
+        return {
+            "budget_id": budget.id,
+            "status": "incomplete_cost_data",
+            "currency": budget.currency,
+            "spend": None,
+            "known_spend": money(total),
+            "unknown_cost_records": summary.unknown_cost_records,
+            "budget": money(budget.amount),
+            "utilization_percent": None,
+        }
     utilization = Decimal("0") if budget.amount == 0 else (total / budget.amount) * Decimal("100")
     if budget.amount <= 0:
         status = "indeterminate"
@@ -732,12 +1026,20 @@ def forecast_spend(records: Iterable[UsageRecord], period_days: int = 30) -> dic
     currencies = {item.currency for item in items}
     if len(currencies) != 1:
         raise AIMeterError("cannot forecast mixed currencies")
+    summary = summarize_costs(items)
+    if summary.unknown_cost_records:
+        return {
+            "status": "incomplete_cost_data",
+            "forecast": None,
+            "known_spend": money(summary.known_total_cost),
+            "unknown_cost_records": summary.unknown_cost_records,
+        }
     first = parse_time(str(items[0].data["start_time"]))
     last = parse_time(str(items[-1].data["start_time"]))
     elapsed_days = max(
         Decimal(str((last - first).total_seconds())) / Decimal("86400"), Decimal("1")
     )
-    spend = sum((item.total_cost for item in items), Decimal("0"))
+    spend = summary.known_total_cost
     forecast = spend / elapsed_days * Decimal(period_days)
     return {"status": "forecast", "currency": items[0].currency, "forecast": money(forecast)}
 
@@ -746,13 +1048,18 @@ def detect_anomalies(records: Iterable[UsageRecord]) -> list[dict[str, Any]]:
     """Rule-based anomaly detection with evidence."""
 
     anomalies: list[dict[str, Any]] = []
-    costs = [record.total_cost for record in records]
+    items = list(records)
+    costs = [record.total_cost for record in items if record.total_cost is not None]
     threshold = (
         (sum(costs, Decimal("0")) / Decimal(len(costs)) * Decimal("3")) if costs else Decimal("0")
     )
-    for record in records:
+    for record in items:
         usage = record.data.get("usage", {})
-        if record.total_cost > threshold > 0:
+        if record.total_cost is None:
+            anomalies.append(
+                {"record_id": record.record_id, "rule": "unknown_cost", "evidence": "unknown"}
+            )
+        elif record.total_cost > threshold > 0:
             anomalies.append(
                 {
                     "record_id": record.record_id,
@@ -798,11 +1105,7 @@ class JsonlStore:
     def read_all(self) -> list[UsageRecord]:
         if not self.path.exists():
             return []
-        return [
-            validate_record(json.loads(line))
-            for line in self.path.read_text(encoding="utf-8").splitlines()
-            if line
-        ]
+        return load_records(self.path)
 
 
 class SQLiteStore:
@@ -820,47 +1123,83 @@ class SQLiteStore:
             "provider TEXT NOT NULL, "
             "model TEXT NOT NULL, "
             "currency TEXT NOT NULL, "
-            "total_cost TEXT NOT NULL, success_weight TEXT NOT NULL, data TEXT NOT NULL)"
+            "total_cost TEXT, success_weight TEXT, data TEXT NOT NULL)"
         )
+        self._migrate_legacy_schema()
+
+    def _migrate_legacy_schema(self) -> None:
+        columns = {
+            str(row[1]): bool(row[3])
+            for row in self.connection.execute("PRAGMA table_info(records)").fetchall()
+        }
+        if not columns.get("total_cost", False) and not columns.get("success_weight", False):
+            return
+        with self.connection:
+            self.connection.execute("ALTER TABLE records RENAME TO records_legacy")
+            self.connection.execute(
+                "CREATE TABLE records ("
+                "record_id TEXT PRIMARY KEY, start_time TEXT NOT NULL, record_type TEXT NOT NULL, "
+                "provider TEXT NOT NULL, model TEXT NOT NULL, currency TEXT NOT NULL, "
+                "total_cost TEXT, success_weight TEXT, data TEXT NOT NULL)"
+            )
+            rows = self.connection.execute("SELECT data FROM records_legacy").fetchall()
+            for (raw_data,) in rows:
+                self._insert(validate_record(load_json_value(str(raw_data), "stored record")))
+            self.connection.execute("DROP TABLE records_legacy")
 
     def close(self) -> None:
         self.connection.close()
 
     def add(self, record: UsageRecord) -> None:
-        with self.connection:
-            self.connection.execute(
-                "INSERT INTO records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    record.record_id,
-                    record.data["start_time"],
-                    record.data["record_type"],
-                    record.data["model"]["provider"],
-                    record.data["model"].get("response_model")
-                    or record.data["model"].get("requested_model"),
-                    record.currency,
-                    str(record.total_cost),
-                    str(record.success_weight),
-                    record.to_json(),
-                ),
-            )
+        self.add_many([record])
+
+    def _insert(self, record: UsageRecord) -> None:
+        self.connection.execute(
+            "INSERT INTO records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                record.record_id,
+                record.data["start_time"],
+                record.data["record_type"],
+                record.data["model"]["provider"],
+                record.data["model"].get("response_model")
+                or record.data["model"].get("requested_model"),
+                record.currency,
+                None if record.total_cost is None else str(record.total_cost),
+                None if record.success_weight is None else str(record.success_weight),
+                record.to_json(),
+            ),
+        )
+
+    def add_many(self, records: Iterable[UsageRecord]) -> None:
+        items = list(records)
+        ensure_unique_record_ids(items)
+        try:
+            with self.connection:
+                for record in items:
+                    self._insert(record)
+        except sqlite3.IntegrityError as exc:
+            raise AIMeterError("duplicate record_id") from exc
 
     def all(self) -> list[UsageRecord]:
         rows = self.connection.execute(
             "SELECT data FROM records ORDER BY start_time, record_id"
         ).fetchall()
-        return [validate_record(json.loads(row[0])) for row in rows]
+        return [validate_record(load_json_value(str(row[0]), "stored record")) for row in rows]
 
     def summarize(self) -> dict[str, Any]:
         records = self.all()
-        total = sum((record.total_cost for record in records), Decimal("0"))
+        summary = summarize_costs(records)
         cps = cost_per_success(records)
         return {
             "records": len(records),
-            "currency": records[0].currency if records else "USD",
-            "total_cost": money(total),
+            "currency": summary.currency,
+            "status": summary.status,
+            "total_cost": None if summary.total_cost is None else money(summary.total_cost),
+            "known_total_cost": money(summary.known_total_cost),
+            "unknown_cost_records": summary.unknown_cost_records,
             "successful_outcomes": str(cps.denominator),
             "cost_per_success": None if cps.value is None else money(cps.value),
-            "status": cps.status,
+            "cost_per_success_status": cps.status,
         }
 
 
@@ -875,6 +1214,13 @@ class Meter:
         self.store.add(record)
         return record
 
+    def ingest_many(self, raw_records: Iterable[dict[str, Any]]) -> list[UsageRecord]:
+        """Validate and persist a complete batch atomically."""
+
+        records = [validate_record(raw) for raw in raw_records]
+        self.store.add_many(records)
+        return records
+
     def records(self) -> list[UsageRecord]:
         return self.store.all()
 
@@ -888,10 +1234,14 @@ class Meter:
 def load_yaml(path: Path) -> dict[str, Any]:
     """Safely load YAML from disk."""
 
-    with path.open("r", encoding="utf-8") as handle:
-        loaded = yaml.safe_load(handle)
+    text = read_limited_text(path, MAX_INPUT_BYTES, "YAML input")
+    try:
+        loaded = yaml.load(text, Loader=_DuplicateKeyLoader)  # noqa: S506  # nosec B506
+    except yaml.YAMLError as exc:
+        raise AIMeterError(f"invalid YAML: {exc}") from exc
     if not isinstance(loaded, dict):
         raise AIMeterError("YAML root must be a mapping")
+    validate_structure(loaded, "YAML input")
     return loaded
 
 
@@ -906,19 +1256,48 @@ def require_mapping(value: Any, context: str) -> dict[str, Any]:
 def load_records(path: Path) -> list[UsageRecord]:
     """Load one record from JSON or many records from JSONL."""
 
-    text = path.read_text(encoding="utf-8")
+    text = read_limited_text(path, MAX_INPUT_BYTES, "JSON input")
     if path.suffix == ".jsonl":
-        return [
-            validate_record(require_mapping(json.loads(line), "JSONL record"))
-            for line in text.splitlines()
-            if line
+        lines = [line for line in text.splitlines() if line]
+        if len(lines) > MAX_RECORDS_PER_INPUT:
+            raise AIMeterError("JSON input contains too many records")
+        records = [
+            validate_record(require_mapping(load_json_value(line, "JSONL record"), "JSONL record"))
+            for line in lines
         ]
-    loaded = json.loads(text)
+        ensure_unique_record_ids(records)
+        return records
+    loaded = load_json_value(text, "input")
     if isinstance(loaded, list):
-        return [validate_record(require_mapping(item, "JSON record")) for item in loaded]
+        if len(loaded) > MAX_RECORDS_PER_INPUT:
+            raise AIMeterError("JSON input contains too many records")
+        records = [validate_record(require_mapping(item, "JSON record")) for item in loaded]
+        ensure_unique_record_ids(records)
+        return records
     if isinstance(loaded, dict):
         return [validate_record(loaded)]
     raise AIMeterError("expected JSON object or array")
+
+
+def load_single_record(path: Path) -> UsageRecord:
+    """Load exactly one record for a single-record calculator."""
+
+    records = load_records(path)
+    if len(records) != 1:
+        raise AIMeterError("command requires exactly one record")
+    return records[0]
+
+
+def ensure_unique_record_ids(records: Iterable[UsageRecord]) -> None:
+    """Reject duplicate event IDs before they can distort aggregates."""
+
+    identifiers: set[str] = set()
+    for count, record in enumerate(records, start=1):
+        if count > MAX_RECORDS_PER_INPUT:
+            raise AIMeterError("input contains too many records")
+        if record.record_id in identifiers:
+            raise AIMeterError("duplicate record_id")
+        identifiers.add(record.record_id)
 
 
 def write_json(path: Path, data: Any) -> None:
@@ -940,19 +1319,36 @@ def report(records: list[UsageRecord], kind: str) -> dict[str, Any]:
             "numerator": money(cps.numerator),
             "denominator": str(cps.denominator),
             "value": None if cps.value is None else money(cps.value),
+            "unknown_cost_records": cps.unknown_cost_records,
+            "unknown_outcome_records": cps.unknown_outcome_records,
         }
     if kind == "outcomes":
+        known = [record.success_weight for record in records if record.success_weight is not None]
         return {
             "attempts": len(records),
-            "successful_outcomes": str(
-                sum((record.success_weight for record in records), Decimal("0"))
-            ),
+            "successful_outcomes": str(sum(known, Decimal("0"))),
+            "unknown_outcome_records": len(records) - len(known),
+            "status": "complete" if len(known) == len(records) else "incomplete_outcome_data",
         }
     if kind == "providers":
-        totals: dict[str, Decimal] = defaultdict(Decimal)
+        grouped: dict[tuple[str, str], list[UsageRecord]] = defaultdict(list)
         for record in records:
-            totals[str(record.data["model"]["provider"])] += record.total_cost
-        return {"providers": {key: money(value) for key, value in sorted(totals.items())}}
+            grouped[(str(record.data["model"]["provider"]), record.currency)].append(record)
+        providers: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
+        for (provider, currency), items in grouped.items():
+            summary = summarize_costs(items)
+            providers[provider][currency] = {
+                "status": summary.status,
+                "total_cost": None if summary.total_cost is None else money(summary.total_cost),
+                "known_total_cost": money(summary.known_total_cost),
+                "unknown_cost_records": summary.unknown_cost_records,
+            }
+        return {
+            "providers": {
+                provider: dict(sorted(currencies.items()))
+                for provider, currencies in sorted(providers.items())
+            }
+        }
     if kind == "anomalies":
         return {"anomalies": detect_anomalies(records)}
     return SQLiteSummary.from_records(records).as_dict()
@@ -1020,8 +1416,10 @@ def export_prometheus_metrics(records: Iterable[UsageRecord]) -> str:
     for record in items:
         model = record.data["model"]
         model_name = str(model.get("response_model") or model.get("requested_model"))
-        totals[(str(model["provider"]), model_name, record.currency)] += record.total_cost
-        successes[(str(model["provider"]), model_name)] += record.success_weight
+        if record.total_cost is not None:
+            totals[(str(model["provider"]), model_name, record.currency)] += record.total_cost
+        if record.success_weight is not None:
+            successes[(str(model["provider"]), model_name)] += record.success_weight
     for (provider, model_name, currency), value in sorted(totals.items()):
         lines.append(
             'aimeter_cost_total{provider="'
@@ -1052,6 +1450,8 @@ def render_static_html_report(records: list[UsageRecord], title: str = "AIMeter 
     for record in records:
         model = record.data["model"]
         model_name = html.escape(str(model.get("response_model") or model.get("requested_model")))
+        cost_text = "unknown" if record.total_cost is None else money(record.total_cost)
+        outcome_text = "unknown" if record.success_weight is None else str(record.success_weight)
         rows.append(
             "<tr>"
             f"<td>{html.escape(record.record_id)}</td>"
@@ -1059,8 +1459,8 @@ def render_static_html_report(records: list[UsageRecord], title: str = "AIMeter 
             f"<td>{html.escape(str(model['provider']))}</td>"
             f"<td>{model_name}</td>"
             f"<td>{html.escape(record.currency)}</td>"
-            f"<td>{html.escape(money(record.total_cost))}</td>"
-            f"<td>{html.escape(str(record.success_weight))}</td>"
+            f"<td>{html.escape(cost_text)}</td>"
+            f"<td>{html.escape(outcome_text)}</td>"
             "</tr>"
         )
     return (
@@ -1073,6 +1473,10 @@ def render_static_html_report(records: list[UsageRecord], title: str = "AIMeter 
         f"<h1>{html.escape(title)}</h1>"
         f"<p class='metric'>Records: {summary['records']}</p>"
         f"<p class='metric'>Total cost: {summary['total_cost']} {summary['currency']}</p>"
+        f"<p class='metric'>Known cost subtotal: {summary['known_total_cost']} "
+        f"{summary['currency']}</p>"
+        f"<p class='metric'>Cost completeness: {summary['status']} "
+        f"({summary['unknown_cost_records']} unknown records)</p>"
         f"<p class='metric'>Cost per success: {cps['value']} {cps['currency']}</p>"
         f"<h2>Providers</h2><pre>{html.escape(json.dumps(provider_report, indent=2))}</pre>"
         "<h2>Records</h2><table><thead><tr><th>ID</th><th>Start</th><th>Provider</th>"
@@ -1085,20 +1489,29 @@ def render_static_html_report(records: list[UsageRecord], title: str = "AIMeter 
 class SQLiteSummary:
     records: int
     currency: str
-    total_cost: Decimal
+    total_cost: Decimal | None
+    known_total_cost: Decimal
+    unknown_cost_records: int
 
     @classmethod
     def from_records(cls, records: list[UsageRecord]) -> Self:
-        currency = records[0].currency if records else "USD"
+        summary = summarize_costs(records)
         return cls(
-            len(records), currency, sum((record.total_cost for record in records), Decimal("0"))
+            summary.records,
+            summary.currency,
+            summary.total_cost,
+            summary.known_total_cost,
+            summary.unknown_cost_records,
         )
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "records": self.records,
             "currency": self.currency,
-            "total_cost": money(self.total_cost),
+            "total_cost": None if self.total_cost is None else money(self.total_cost),
+            "known_total_cost": money(self.known_total_cost),
+            "unknown_cost_records": self.unknown_cost_records,
+            "status": "complete" if self.unknown_cost_records == 0 else "incomplete_cost_data",
         }
 
 
@@ -1121,7 +1534,7 @@ def export_csv(records: list[UsageRecord], path: Path) -> None:
                     safe_csv_cell(model.get("response_model") or model.get("requested_model")),
                     record.currency,
                     safe_csv_cell(record.total_cost),
-                    str(record.success_weight),
+                    "" if record.success_weight is None else str(record.success_weight),
                 ]
             )
 
@@ -1140,7 +1553,7 @@ def export_focus_rows(records: list[UsageRecord]) -> list[dict[str, Any]]:
                 "ResourceName": record.data["model"].get("response_model")
                 or record.data["model"].get("requested_model"),
                 "BillingCurrency": record.currency,
-                "EffectiveCost": money(record.total_cost),
+                "EffectiveCost": None if record.total_cost is None else money(record.total_cost),
                 "Tags": json.dumps(record.data.get("attribution", {}), sort_keys=True),
             }
         )
@@ -1165,13 +1578,17 @@ def cache_avoided_cost(uncached_cost: Decimal, cached_cost: Decimal) -> dict[str
     return {"category": "estimated", "avoided_cost": money(uncached_cost - cached_cost)}
 
 
-def success_rate(records: Iterable[UsageRecord]) -> Decimal:
-    """Calculate success rate."""
+def success_rate(records: Iterable[UsageRecord]) -> Decimal | None:
+    """Calculate success rate, returning ``None`` when outcomes are incomplete."""
 
     items = list(records)
     if not items:
         return Decimal("0")
-    return sum((item.success_weight for item in items), Decimal("0")) / Decimal(len(items))
+    if any(item.success_weight is None for item in items):
+        return None
+    return sum((item.success_weight or Decimal("0") for item in items), Decimal("0")) / Decimal(
+        len(items)
+    )
 
 
 def cache_hit_rate(records: Iterable[UsageRecord]) -> Decimal:
@@ -1196,9 +1613,14 @@ def audit_log_to_record(event: dict[str, Any]) -> UsageRecord:
     target = event.get("target", {})
     usage = event.get("usage", {})
     cost = event.get("cost", {})
+    source_id = event.get("event_id") or event.get("record_id")
+    if not source_id:
+        raise AIMeterError("audit-log event_id or record_id is required")
+    if not event.get("start_time") and not event.get("time"):
+        raise AIMeterError("audit-log event time is required")
     record = {
         "schema_version": SCHEMA_VERSION,
-        "record_id": str(event.get("event_id") or event.get("record_id") or uuid.uuid4()),
+        "record_id": str(source_id),
         "record_type": str(event.get("record_type", "model.usage")),
         "start_time": str(event.get("start_time") or event.get("time")),
         "end_time": str(event.get("end_time") or event.get("time")),
@@ -1238,37 +1660,42 @@ def audit_log_to_record(event: dict[str, Any]) -> UsageRecord:
         },
         "cost": {
             "currency": cost.get("currency", "USD"),
-            "provider_cost": cost.get("provider_cost", "0"),
-            "infrastructure_cost": cost.get("infrastructure_cost", "0"),
-            "allocated_cost": cost.get("allocated_cost", "0"),
-            "total_cost": cost.get("total_cost", "0"),
             "calculation_method": cost.get("calculation_method", "audit_log_derived"),
         },
         "outcome": event.get("outcome", {}),
         "correlation": event.get("correlation", {}),
         "metadata": {"source_event_type": event.get("event_type", "audit_log")},
     }
+    for field in ("provider_cost", "infrastructure_cost", "allocated_cost", "total_cost"):
+        if cost.get(field) is not None:
+            record["cost"][field] = cost[field]
     return validate_record(record)
 
 
 def load_audit_log(path: Path) -> list[UsageRecord]:
     """Load JSON or JSONL audit-log events and convert them to usage records."""
 
-    text = path.read_text(encoding="utf-8")
+    text = read_limited_text(path, MAX_INPUT_BYTES, "audit-log input")
     if path.suffix == ".jsonl":
+        lines = [line for line in text.splitlines() if line]
+        if len(lines) > MAX_RECORDS_PER_INPUT:
+            raise AIMeterError("audit-log input contains too many events")
         events = [
-            require_mapping(json.loads(line), "audit-log event")
-            for line in text.splitlines()
-            if line
+            require_mapping(load_json_value(line, "audit-log event"), "audit-log event")
+            for line in lines
         ]
     else:
-        loaded = json.loads(text)
+        loaded = load_json_value(text, "audit-log input")
         events = (
             [require_mapping(item, "audit-log event") for item in loaded]
             if isinstance(loaded, list)
             else [require_mapping(loaded, "audit-log event")]
         )
-    return [audit_log_to_record(event) for event in events]
+    if len(events) > MAX_RECORDS_PER_INPUT:
+        raise AIMeterError("audit-log input contains too many events")
+    records = [audit_log_to_record(event) for event in events]
+    ensure_unique_record_ids(records)
+    return records
 
 
 def orchestration_record(
@@ -1279,7 +1706,7 @@ def orchestration_record(
     start_time: datetime,
     end_time: datetime,
     status: str,
-    cost: Decimal = Decimal("0"),
+    cost: Decimal | None = None,
     currency: str = "USD",
 ) -> UsageRecord:
     """Create an agent-run instrumentation record for orchestration systems."""
@@ -1301,7 +1728,10 @@ def orchestration_record(
             "model": {"provider": "orchestrator", "requested_model": "agent", "hosting": "unknown"},
             "usage": {"total_tokens": 0},
             "performance": {"latency_ms": int(latency), "status": status},
-            "cost": {"currency": currency, "total_cost": money(cost)},
+            "cost": {
+                "currency": currency,
+                **({"total_cost": money(cost)} if cost is not None else {}),
+            },
             "outcome": {"outcome_id": workflow_id, "success": status == "success", "quantity": "1"},
             "metadata": {"instrumentation": "orchestration_record"},
         }

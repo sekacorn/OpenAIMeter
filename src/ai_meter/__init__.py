@@ -5,6 +5,7 @@ from ai_meter.core import (
     AllocationInput,
     Budget,
     CostPerSuccessResult,
+    CostSummary,
     InfrastructureProfile,
     Meter,
     PricingTable,
@@ -23,6 +24,7 @@ from ai_meter.core import (
     forecast_spend,
     load_audit_log,
     load_records,
+    load_single_record,
     load_yaml,
     local_cost_profile_catalog,
     model_swap_projection,
@@ -31,6 +33,7 @@ from ai_meter.core import (
     reconcile_costs,
     render_static_html_report,
     safe_csv_cell,
+    summarize_costs,
     validate_record,
 )
 
@@ -38,6 +41,7 @@ __all__ = [
     "AllocationInput",
     "Budget",
     "CostPerSuccessResult",
+    "CostSummary",
     "InfrastructureProfile",
     "Meter",
     "AIMeterError",
@@ -57,6 +61,7 @@ __all__ = [
     "forecast_spend",
     "load_audit_log",
     "load_records",
+    "load_single_record",
     "load_yaml",
     "local_cost_profile_catalog",
     "model_swap_projection",
@@ -65,7 +70,8 @@ __all__ = [
     "reconcile_costs",
     "render_static_html_report",
     "safe_csv_cell",
+    "summarize_costs",
     "validate_record",
 ]
 
-__version__ = "0.1.0a5"
+__version__ = "0.2.0b1"
